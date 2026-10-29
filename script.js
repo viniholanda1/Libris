@@ -2536,6 +2536,39 @@ async function updateQrCameraChoices(activeDeviceId = '') {
   }
 }
 
+function waitForCameraFrame(video, timeoutMs = 8000) {
+  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) return Promise.resolve()
+
+  return new Promise((resolve, reject) => {
+    let timeoutId
+    const cleanup = () => {
+      clearTimeout(timeoutId)
+      video.removeEventListener('loadeddata', checkFrame)
+      video.removeEventListener('playing', checkFrame)
+      video.removeEventListener('error', handleError)
+    }
+    const checkFrame = () => {
+      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
+        cleanup()
+        resolve()
+      }
+    }
+    const handleError = () => {
+      cleanup()
+      reject(new Error(video.error?.message || 'O vídeo da câmera não carregou.'))
+    }
+
+    video.addEventListener('loadeddata', checkFrame)
+    video.addEventListener('playing', checkFrame)
+    video.addEventListener('error', handleError)
+    timeoutId = setTimeout(() => {
+      cleanup()
+      reject(new Error('A câmera foi aberta, mas não enviou imagens. Verifique a lente ou selecione outra câmera.'))
+    }, timeoutMs)
+    checkFrame()
+  })
+}
+
 async function startQrCamera(deviceId = '') {
   const status = $('#qrScannerStatus')
   const video = $('#qrScannerVideo')
@@ -2551,13 +2584,16 @@ async function startQrCamera(deviceId = '') {
   }
 
   try {
+    if (status) status.textContent = 'Preparando o acesso à câmera…'
     if (isTauri()) {
+      if (status) status.textContent = 'Solicitando permissão de câmera ao aplicativo…'
       await invoke('begin_camera_permission_request')
       cameraPermissionPending = true
     }
 
     video.muted = true
     video.playsInline = true
+    if (status) status.textContent = deviceId ? 'Abrindo a câmera selecionada…' : 'Abrindo uma câmera disponível…'
     const { BrowserQRCodeReader } = await import('@zxing/browser')
     const reader = new BrowserQRCodeReader()
     const onScan = (result, scanError, controls) => {
@@ -2567,21 +2603,17 @@ async function startQrCamera(deviceId = '') {
       }
     }
 
-    try {
-      qrScannerControls = await reader.decodeFromVideoDevice(deviceId || undefined, video, onScan)
-    } catch (cameraError) {
-      if (deviceId || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(cameraError?.name)) {
-        throw cameraError
-      }
-      if (isTauri()) {
-        await invoke('begin_camera_permission_request')
-        cameraPermissionPending = true
-      }
-      qrScannerControls = await reader.decodeFromConstraints({ video: true, audio: false }, video, onScan)
-    }
+    if (status) status.textContent = 'Inicializando o vídeo…'
+    qrScannerControls = deviceId
+      ? await reader.decodeFromVideoDevice(deviceId, video, onScan)
+      : await reader.decodeFromConstraints({ video: true, audio: false }, video, onScan)
 
     qrScannerStream = video.srcObject
     if (!qrScannerStream) throw new Error('O WebView não iniciou o fluxo de vídeo da câmera.')
+    const videoTrack = qrScannerStream.getVideoTracks()[0]
+    if (!videoTrack || videoTrack.readyState !== 'live') throw new Error('A câmera foi aberta, mas não está enviando vídeo.')
+    if (status) status.textContent = 'Câmera conectada; aguardando a primeira imagem…'
+    await waitForCameraFrame(video)
     const activeDeviceId = qrScannerStream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId
     await updateQrCameraChoices(activeDeviceId)
 
