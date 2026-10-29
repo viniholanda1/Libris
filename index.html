@@ -62,7 +62,7 @@
         <section class="modal-card small" role="dialog" aria-modal="true" aria-labelledby="aboutModalTitle">
           <button class="modal-close" type="button" data-close="aboutModal" aria-label="Fechar">×</button>
           <h3 id="aboutModalTitle">Sobre o Libris</h3>
-          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.2.</p>
+          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.3.</p>
           <dl class="about-details">
             <div><dt>Desenvolvimento</dt><dd>Vinicius e Alyssa</dd></div>
             <div><dt>Tecnologias</dt><dd>HTML, CSS, JavaScript e Rust (Tauri)</dd></div>
@@ -88,7 +88,11 @@
           </details>
           <details class="help-item">
             <summary>Posso usar um leitor de código de barras?</summary>
-            <p>Sim. Leitores USB que funcionam como teclado podem inserir o código no campo ID do livro. A câmera QR também pode ser usada quando disponível.</p>
+            <p>Sim. Leitores USB 2D comuns funcionam como teclado, sem configuração no Libris. O campo ID do livro fica pronto ao abrir Empréstimos; a leitura é reconhecida automaticamente ou ao enviar Enter. A câmera QR também pode ser usada quando disponível.</p>
+          </details>
+          <details class="help-item">
+            <summary>Como entrar em tela cheia?</summary>
+            <p>Pressione F11 para alternar entre tela cheia e janela.</p>
           </details>
           <details class="help-item">
             <summary>Como registro a devolução ou renovação?</summary>
@@ -314,7 +318,7 @@
                       <th>ID</th>
                       <th>Título</th>
                       <th>Categoria</th>
-                      <th>Tombamento</th>
+                      <th>ISBN</th>
                       <th>Quantidade</th>
                       <th>Localização</th>
                       <th>Status</th>
@@ -420,8 +424,8 @@
 
             <div class="panel chart-panel">
               <div class="panel-head">
-                <h3>Empréstimos por Curso/Turma</h3>
-                <button class="chart-info-btn" type="button" data-chart-info-title="Empréstimos por Curso/Turma" data-chart-info="Agrupa os empréstimos ativos pelo curso ou turma dos leitores." aria-label="Informações sobre Empréstimos por Curso/Turma" title="Sobre este gráfico">i</button>
+                <h3>Empréstimos dos Alunos por Turma</h3>
+                <button class="chart-info-btn" type="button" data-chart-info-title="Empréstimos dos Alunos por Turma" data-chart-info="Mostra os empréstimos ativos de alunos agrupados pela turma cadastrada." aria-label="Informações sobre Empréstimos dos Alunos por Turma" title="Sobre este gráfico">i</button>
               </div>
               <div class="bar-chart" id="courseChart"></div>
             </div>
@@ -685,6 +689,10 @@
         <button class="modal-close" type="button" data-close="qrScannerModal" aria-label="Fechar leitor de câmera">×</button>
         <h3 id="qrScannerTitle">Escanear código do livro</h3>
         <p class="modal-description">Aponte a câmera para o QR code da etiqueta do livro.</p>
+        <label id="qrCameraDeviceControl" class="qr-camera-select" hidden>
+          <span>Câmera</span>
+          <select id="qrCameraDeviceInput" aria-label="Selecionar câmera"></select>
+        </label>
         <video id="qrScannerVideo" class="qr-scanner-video" autoplay muted playsinline></video>
         <p id="qrScannerStatus" class="scanner-status" role="status" aria-live="polite">
           Solicitando acesso à câmera…
@@ -733,8 +741,8 @@
             <input id="bookQuantityInput" type="number" min="1" value="1" required />
           </label>
           <label>
-            <span>Número de tombamento</span>
-            <input id="bookTombamentoInput" type="text" />
+            <span>ISBN</span>
+            <input id="bookIsbnInput" type="text" maxlength="20" placeholder="Ex.: 978-85-..." autocomplete="off" />
           </label>
           <div style="display:flex; justify-content:flex-end; gap:0.5rem; grid-column: 1 / -1; margin-top: 1rem;">
             <input id="bookIdInput" type="hidden" />

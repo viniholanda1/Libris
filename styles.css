@@ -492,6 +492,7 @@ tr:last-child td { border-bottom: none; }
 }
 
 .qr-modal-card { width: min(92vw, 520px); }
+.qr-camera-select { display:grid; gap:0.35rem; margin:0.75rem 0; font-weight:700; }
 .qr-scanner-video {
   display: block;
   width: 100%;

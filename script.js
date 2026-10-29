@@ -3,11 +3,15 @@
 
 import { auth, signInWithEmailAndPassword, signOut } from './firebase.js'
 import { invoke, isTauri } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { save } from '@tauri-apps/plugin-dialog'
 import { writeFile } from '@tauri-apps/plugin-fs'
 import { open } from '@tauri-apps/plugin-shell'
 import { createLocalStore } from './local-store.mjs'
 import { createLocalDataApi } from './local-data.mjs'
+import { isCompleteBookScan, parseBookScan } from './book-scan.mjs'
+import { isValidIsbn, normalizeIsbn } from './isbn.mjs'
+import { isStudentReader, studentCourseLoans } from './reader-profiles.mjs'
 import { createCoordinationEmailHtml, createStudentEmailHtml } from './email-templates.mjs'
 import { backupCollectionFiles, optionalBackupCollectionFiles, backupRecordFromRow, parseBackupCell, resolveLegacyCategory } from './csv-backup.mjs'
 import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
@@ -221,7 +225,7 @@ function renderBooks() {
   if (!body) return;
   const q = state.acervoQuery.toLowerCase().trim()
   const list = state.books.filter((b) => !q || [b.title, b.author, b.code].some((x) => String(x || '').toLowerCase().includes(q)))
-  body.innerHTML = list.length ? list.map((b) => `<tr><td>${esc(b.code)}</td><td>${esc(b.title)}</td><td>${esc(bookCategoryName(b))}</td><td>${esc(b.tombamento || 'Não informado')}</td><td>${Number(b.total || 0)}</td><td>${esc(b.shelf || '—')}</td><td><span class="badge ${bookStatus(b) === 'disponivel' ? 'available' : 'borrowed'}">${bookStatus(b) === 'disponivel' ? 'Disponível' : 'Emprestado'}</span></td><td><div class="action-row"><button class="small-btn primary" type="button" data-edit-book="${b.id}">Editar</button><button class="small-btn danger" type="button" data-del-book="${b.id}">Apagar</button></div></td></tr>`).join('') : '<tr><td colspan="8">Nenhum livro cadastrado.</td></tr>';
+  body.innerHTML = list.length ? list.map((b) => `<tr><td>${esc(b.code)}</td><td>${esc(b.title)}</td><td>${esc(bookCategoryName(b))}</td><td>${esc(b.isbn || 'Não informado')}</td><td>${Number(b.total || 0)}</td><td>${esc(b.shelf || '—')}</td><td><span class="badge ${bookStatus(b) === 'disponivel' ? 'available' : 'borrowed'}">${bookStatus(b) === 'disponivel' ? 'Disponível' : 'Emprestado'}</span></td><td><div class="action-row"><button class="small-btn primary" type="button" data-edit-book="${b.id}">Editar</button><button class="small-btn danger" type="button" data-del-book="${b.id}">Apagar</button></div></td></tr>`).join('') : '<tr><td colspan="8">Nenhum livro cadastrado.</td></tr>';
   $$('[data-edit-book]').forEach((b) => b.onclick = () => editBook(b.dataset.editBook)); 
   $$('[data-del-book]').forEach((b) => b.onclick = () => removeBook(b.dataset.delBook))
 }
@@ -297,12 +301,6 @@ function renderReaders() {
   $$('[data-edit-reader]').forEach((b) => b.onclick = () => editReader(b.dataset.editReader)); 
   $$('[data-del-reader]').forEach((b) => b.onclick = () => removeReader(b.dataset.delReader)); 
   renderReaderSelector()
-}
-
-function isStudentReader(reader) {
-  const type = String(reader?.type || '').toLocaleLowerCase('pt-BR')
-  const role = String(reader?.role || '').toLocaleLowerCase('pt-BR')
-  return type === 'aluno' || role === 'student' || (!type && !role)
 }
 
 function isTeacherReader(reader) {
@@ -465,7 +463,8 @@ function renderDashboard() {
   const percent = total ? Math.round(free / total * 100) : 0
   if ($('#statusDonut')) $('#statusDonut').innerHTML = `<div class="donut" style="background:conic-gradient(var(--success) 0 ${percent}%,var(--warning) ${percent}% 100%)"><div class="donut-center">${percent}%</div></div>`
   if ($('#statusLegend')) $('#statusLegend').innerHTML = `<div class="legend-item"><span class="legend-dot success"></span>Disponíveis: ${free}</div><div class="legend-item"><span class="legend-dot warning"></span>Emprestados: ${Math.max(0, total - free)}</div>`
-  renderBars($('#courseChart'), countLoanCopies(active, (l) => l.readerCourse || 'Não informado').slice(0, 5))
+  const activeStudentCourseLoans = studentCourseLoans(active, state.readers)
+  renderBars($('#courseChart'), countLoanCopies(activeStudentCourseLoans, (loan) => loan.readerCourse).slice(0, 5))
   const top = countLoanCopies(state.loans, (l) => l.readerName || 'Leitor').slice(0, 5)
   if ($('#readerChart')) $('#readerChart').innerHTML = top.length ? top.map((x) => `<div class="list-item"><strong>${esc(x.label)}</strong><span>${x.value} exemplares</span></div>`).join('') : '<p class="empty-state">Sem dados.</p>'
 
@@ -884,6 +883,7 @@ async function addBook(event) {
   const title = $('#bookTitleInput')?.value.trim()
   const author = $('#bookAuthorInput')?.value.trim()
   const publisher = $('#bookPublisherInput')?.value.trim()
+  const enteredIsbn = $('#bookIsbnInput')?.value.trim() || ''
   const existingBook = editingId ? state.books.find((item) => item.id === editingId) : null
   const existingMeta = editingId ? { synopsis: existingBook?.synopsis || '', coverUrl: existingBook?.coverUrl || '' } : await lookupBookMetadata(title, author, publisher)
   const book = {
@@ -894,11 +894,13 @@ async function addBook(event) {
     year: Number($('#bookYearInput')?.value || 2026),
     shelf: $('#bookShelfInput')?.value.trim() || '',
     total: Number($('#bookQuantityInput')?.value || 1),
-    tombamento: $('#bookTombamentoInput')?.value.trim() || '',
+    isbn: normalizeIsbn(enteredIsbn),
+    legacyCatalogReference: existingBook?.legacyCatalogReference || existingBook?.tombamento || '',
     synopsis: existingMeta.synopsis,
     coverUrl: existingMeta.coverUrl
   }
   const borrowedCopies = existingBook ? Number(existingBook.total || 0) - Number(existingBook.available || 0) : 0
+  if (enteredIsbn && !isValidIsbn(enteredIsbn)) return toast('Informe um ISBN-10 ou ISBN-13 válido.', 'error')
   if (!book.title || !book.author || !Number.isInteger(book.total) || book.total < 1 || book.total < borrowedCopies) return toast(book.total < borrowedCopies ? `A quantidade não pode ser menor que os ${borrowedCopies} exemplares emprestados.` : 'Preencha título, autor, categoria e quantidade válida.', 'error')
 
   loading(button, true, 'Salvando…')
@@ -1425,7 +1427,8 @@ const bookExportFields = [
   ['Localização', 'shelf'],
   ['Disponíveis', 'available'],
   ['Total', 'total'],
-  ['Tombamento', 'tombamento'],
+  ['ISBN', 'isbn'],
+  ['Referência anterior', 'legacyCatalogReference'],
   ['Status', 'status'],
   ['ID da escola', 'schoolId'],
   ['Nome da escola', 'schoolName'],
@@ -1447,6 +1450,7 @@ const bookExportRows = () => [
     if (field === 'categoryName') return book.categoryName || label(book.categoryId)
     if (field === 'status') return bookStatus(book)
     if (field === 'schoolName') return config.schoolName
+    if (field === 'legacyCatalogReference') return book.legacyCatalogReference || book.tombamento || ''
     return exportValue(book[field])
   }))
 ]
@@ -1630,9 +1634,9 @@ async function restoreCsvBackup(file) {
   for (const [filename, collectionName] of Object.entries({ ...backupCollectionFiles, ...optionalBackupCollectionFiles })) {
     const entry = zip.file(filename)
     if (!entry) continue
-    const workbook = XLSX.read(await entry.async('arraybuffer'), { type: 'array', raw: false })
+    const workbook = XLSX.read(await entry.async('arraybuffer'), { type: 'array', raw: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) : []
+    const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true }) : []
     const headers = (rows[0] || []).map((value) => String(value ?? '').replace(/^\uFEFF/, '').trim())
     collections[collectionName] = rows.slice(1)
       .filter((row) => row.some((value) => String(value ?? '').trim()))
@@ -1679,7 +1683,8 @@ const csvHeaderAliases = {
   localizacao: ['localizacao', 'estante', 'prateleira', 'local'],
   disponiveis: ['disponiveis', 'quantidade disponivel', 'exemplares disponiveis'],
   total: ['total', 'quantidade', 'quantidade total', 'quantidade de exemplares', 'exemplares'],
-  tombamento: ['tombamento', 'numero de tombamento', 'patrimonio'],
+  isbn: ['isbn', 'isbn 10', 'isbn 13', 'numero isbn'],
+  legacyCatalogReference: ['referencia anterior', 'referencia legada', 'tombamento', 'numero de tombamento', 'patrimonio'],
   sinopse: ['sinopse', 'synopsis'],
   capa: ['url da capa', 'capa url', 'cover url', 'coverurl'],
   schoolId: ['id da escola', 'school id', 'schoolid'],
@@ -1720,9 +1725,9 @@ async function importCsv(event) {
   }
 
   try {
-    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: false })
+    const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', raw: true })
     const sheet = workbook.Sheets[workbook.SheetNames[0]]
-    const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: false }) : []
+    const rows = sheet ? XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '', raw: true }) : []
     if (rows.length < 2) return toast('O CSV está vazio ou não contém linhas de livros.', 'error')
 
     const headerRowIndex = rows.findIndex((row) => {
@@ -1824,7 +1829,8 @@ async function importCsv(event) {
         shelf: valueAt(row, 'localizacao'),
         available,
         total,
-        tombamento: valueAt(row, 'tombamento'),
+        isbn: normalizeIsbn(valueAt(row, 'isbn')),
+        legacyCatalogReference: valueAt(row, 'legacyCatalogReference'),
         synopsis: valueAt(row, 'sinopse'),
         coverUrl: valueAt(row, 'capa'),
         status: available > 0 ? 'disponivel' : 'emprestado',
@@ -2020,7 +2026,7 @@ function resetAdminState() {
     context.fillText(String(book.categoryName || label(book.categoryId) || '').toLocaleUpperCase('pt-BR').slice(0, 42), 58, 424, 650)
     context.fillStyle = '#4f6256'
     context.font = '600 28px Arial, sans-serif'
-    context.fillText(`TOMB.: ${String(book.tombamento || '—').toLocaleUpperCase('pt-BR').slice(0, 32)}`, 58, 466, 650)
+    context.fillText(`ISBN: ${String(book.isbn || '—').toLocaleUpperCase('pt-BR').slice(0, 32)}`, 58, 466, 650)
     context.fillStyle = '#718078'
     context.font = '600 22px Arial, sans-serif'
     context.fillText('CÓDIGO DO ACERVO', 58, 508)
@@ -2301,7 +2307,7 @@ function editBook(id) {
   if ($('#bookYearInput')) $('#bookYearInput').value = book.year || ''
   if ($('#bookShelfInput')) $('#bookShelfInput').value = book.shelf || ''
   if ($('#bookQuantityInput')) $('#bookQuantityInput').value = Number(book.total || 1)
-  if ($('#bookTombamentoInput')) $('#bookTombamentoInput').value = book.tombamento || ''
+  if ($('#bookIsbnInput')) $('#bookIsbnInput').value = book.isbn || ''
   
   const titleHeader = $('#bookModalTitle')
   if (titleHeader) titleHeader.textContent = 'Editar livro'
@@ -2431,6 +2437,7 @@ async function notify(id) {
 let qrScannerStream = null
 let qrScannerControls = null
 let cameraPermissionPending = false
+let bookCodeScanTimer = null
 
 function stopQrScanner() {
   try {
@@ -2459,24 +2466,14 @@ function openQrScanner() {
   stopQrScanner()
   if ($('#qrScannerStatus')) $('#qrScannerStatus').textContent = 'Solicitando acesso à câmera…'
   modal('qrScannerModal', true)
-  startQrCamera()
+  startQrCamera($('#qrCameraDeviceInput')?.value || '')
 }
 
 function acceptScannedBook(rawValue) {
   const normalizedValue = String(rawValue || '').trim()
   if (!normalizedValue) return false
 
-  let payload = null
-  try {
-    payload = JSON.parse(normalizedValue)
-  } catch {
-    payload = null
-  }
-
-  const payloadSchoolId = payload?.schoolId || payload?.s
-  const payloadBookId = payload?.bookId || payload?.b
-  const payloadCode = payload?.code || payload?.c
-  const matchedCode = String(payloadCode || normalizedValue.match(/(?:^|[^A-Z0-9])([A-Z0-9]{1,4}-\d{4})(?:$|[^A-Z0-9])/i)?.[1] || normalizedValue).trim().toUpperCase()
+  const { schoolId: payloadSchoolId, bookId: payloadBookId, code: matchedCode } = parseBookScan(normalizedValue)
   const bookById = payloadBookId
     ? state.books.find((item) => String(item.id) === String(payloadBookId))
     : null
@@ -2509,7 +2506,37 @@ function acceptScannedBook(rawValue) {
   return true
 }
 
-async function startQrCamera() {
+async function updateQrCameraChoices(activeDeviceId = '') {
+  const control = $('#qrCameraDeviceControl')
+  const select = $('#qrCameraDeviceInput')
+  if (!control || !select || !navigator.mediaDevices?.enumerateDevices) return
+
+  try {
+    const devices = (await navigator.mediaDevices.enumerateDevices())
+      .filter((device) => device.kind === 'videoinput')
+    select.replaceChildren()
+
+    const defaultOption = document.createElement('option')
+    defaultOption.value = ''
+    defaultOption.textContent = 'Câmera padrão'
+    select.append(defaultOption)
+
+    devices.forEach((device, index) => {
+      const option = document.createElement('option')
+      option.value = device.deviceId
+      option.textContent = device.label || `Câmera ${index + 1}`
+      select.append(option)
+    })
+
+    select.value = activeDeviceId || ''
+    control.hidden = devices.length < 2
+  } catch (err) {
+    console.warn('Não foi possível listar as câmeras disponíveis:', err)
+    control.hidden = true
+  }
+}
+
+async function startQrCamera(deviceId = '') {
   const status = $('#qrScannerStatus')
   const video = $('#qrScannerVideo')
   if (!navigator.mediaDevices?.getUserMedia) {
@@ -2528,30 +2555,41 @@ async function startQrCamera() {
       await invoke('begin_camera_permission_request')
       cameraPermissionPending = true
     }
-    qrScannerStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+
     video.muted = true
     video.playsInline = true
-    video.srcObject = qrScannerStream
-    await video.play()
-
     const { BrowserQRCodeReader } = await import('@zxing/browser')
     const reader = new BrowserQRCodeReader()
-    qrScannerControls = await reader.decodeFromStream(
-      qrScannerStream,
-      video,
-      (result, scanError, controls) => {
-        if (result && acceptScannedBook(result.getText())) controls.stop()
-        if (scanError && scanError.name !== 'NotFoundException') {
-          console.warn('Falha durante a leitura do QR code:', scanError)
-        }
+    const onScan = (result, scanError, controls) => {
+      if (result && acceptScannedBook(result.getText())) controls.stop()
+      if (scanError && scanError.name !== 'NotFoundException') {
+        console.warn('Falha durante a leitura do QR code:', scanError)
       }
-    )
+    }
+
+    try {
+      qrScannerControls = await reader.decodeFromVideoDevice(deviceId || undefined, video, onScan)
+    } catch (cameraError) {
+      if (deviceId || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(cameraError?.name)) {
+        throw cameraError
+      }
+      if (isTauri()) {
+        await invoke('begin_camera_permission_request')
+        cameraPermissionPending = true
+      }
+      qrScannerControls = await reader.decodeFromConstraints({ video: true, audio: false }, video, onScan)
+    }
+
+    qrScannerStream = video.srcObject
+    if (!qrScannerStream) throw new Error('O WebView não iniciou o fluxo de vídeo da câmera.')
+    const activeDeviceId = qrScannerStream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId
+    await updateQrCameraChoices(activeDeviceId)
+
     if (isTauri() && cameraPermissionPending) {
       await invoke('clear_camera_permission_request')
       cameraPermissionPending = false
     }
-    qrScannerStream = video.srcObject
-    if (status) status.textContent = 'Aponte a câmera para o QR code do livro.'
+    if (status) status.textContent = 'Câmera pronta. Aponte para o QR code do livro.'
   } catch (err) {
     if (isTauri() && cameraPermissionPending) {
       cameraPermissionPending = false
@@ -2564,19 +2602,38 @@ async function startQrCamera() {
     stopQrScanner()
     console.error('Falha ao iniciar a câmera ou o leitor QR:', err)
     const message = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
-      ? 'A câmera foi bloqueada. Feche outros aplicativos que a estejam usando e permita o acesso nas configurações do sistema.'
+      ? 'Acesso à câmera negado. Permita a câmera nas configurações do sistema e tente novamente.'
       : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
-        ? 'Nenhuma câmera foi encontrada neste dispositivo.'
-        : 'Erro ao acessar a câmera. Verifique as permissões ou use o leitor USB.'
+        ? 'Nenhuma câmera foi encontrada. Conecte uma câmera ou use o leitor USB.'
+        : err?.name === 'NotReadableError'
+          ? 'A câmera está ocupada ou indisponível. Feche outros aplicativos que possam estar usando-a.'
+          : err?.name === 'OverconstrainedError' || err?.name === 'ConstraintNotSatisfiedError'
+            ? 'A câmera selecionada não é compatível. Escolha outra câmera e tente novamente.'
+            : `Não foi possível iniciar a câmera${err?.name ? ` (${err.name})` : ''}${err?.message ? `: ${err.message}` : ''}.`
     if (status) status.textContent = message
-    toast('Erro ao acessar a câmera. Verifique as permissões ou use o leitor USB.', 'error')
+    toast(message, 'error')
   }
+}
+
+function scheduleBookCodeScan(event) {
+  clearTimeout(bookCodeScanTimer)
+  bookCodeScanTimer = null
+  const input = event.currentTarget
+  const scannedValue = String(input.value || '').trim()
+  if (!isCompleteBookScan(scannedValue)) return
+
+  bookCodeScanTimer = setTimeout(() => {
+    bookCodeScanTimer = null
+    if (String(input.value || '').trim() === scannedValue) acceptScannedBook(scannedValue)
+  }, 140)
 }
 
 function handleBookCodeEntry(event) {
   if (event.key !== 'Enter') return
 
   event.preventDefault()
+  clearTimeout(bookCodeScanTimer)
+  bookCodeScanTimer = null
 
   const input = event.currentTarget
   const scannedValue = String(input.value || '').trim()
@@ -2684,7 +2741,10 @@ function setup() {
       button.setAttribute('aria-label', showing ? 'Ocultar senha' : 'Mostrar senha')
     }
   }
-  if ($('#bookCodeInput')) $('#bookCodeInput').onkeydown = handleBookCodeEntry
+  if ($('#bookCodeInput')) {
+    $('#bookCodeInput').onkeydown = handleBookCodeEntry
+    $('#bookCodeInput').addEventListener('input', scheduleBookCodeScan)
+  }
   if ($('#addLocalAccountBtn')) $('#addLocalAccountBtn').onclick = () => addLocalAccountRow()
   if ($('#openCredeLoginBtn')) $('#openCredeLoginBtn').onclick = () => {
     if ($('#loginForm')) $('#loginForm').hidden = true
@@ -2704,6 +2764,12 @@ function setup() {
   if ($('#registerLoanBtn')) $('#registerLoanBtn').onclick = registerLoan
   updateLoanDaysLimit(null)
   if ($('#scanBtn')) $('#scanBtn').onclick = openQrScanner
+  if ($('#qrCameraDeviceInput')) $('#qrCameraDeviceInput').onchange = (event) => {
+    const deviceId = event.currentTarget.value
+    stopQrScanner()
+    if ($('#qrScannerStatus')) $('#qrScannerStatus').textContent = 'Trocando de câmera…'
+    startQrCamera(deviceId)
+  }
 
   if ($('#openBookModalBtn')) $('#openBookModalBtn').onclick = () => { resetBookForm(); modal('bookFormModal', true) }
   if ($('#openReaderModalBtn')) $('#openReaderModalBtn').onclick = () => { resetReaderForm(); modal('readerFormModal', true) }
@@ -2801,6 +2867,27 @@ function setup() {
     }
     toast('Sessão encerrada.')
   }
+}
+
+function setupFullscreenShortcut() {
+  document.addEventListener('keydown', async (event) => {
+    if (event.key !== 'F11' || event.repeat) return
+    event.preventDefault()
+
+    try {
+      if (isTauri()) {
+        const appWindow = getCurrentWindow()
+        await appWindow.setFullscreen(!(await appWindow.isFullscreen()))
+      } else if (document.fullscreenElement) {
+        await document.exitFullscreen()
+      } else {
+        await document.documentElement.requestFullscreen()
+      }
+    } catch (err) {
+      console.error('Não foi possível alternar para tela cheia:', err)
+      toast('Não foi possível alternar para tela cheia.', 'error')
+    }
+  })
 }
 
 /* -------------------------
@@ -3212,6 +3299,7 @@ async function handleCredeLogin(event) {
    Initialization
    ------------------------- */
 setup()
+setupFullscreenShortcut()
 syncSchoolSettingsForm()
 
 if ($('#importCsvBtn')) $('#importCsvBtn').onclick = () => modal('importCsvFileModal', true)

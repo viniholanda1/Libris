@@ -2,15 +2,16 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import * as XLSX from 'xlsx'
 import { backupCollectionFiles, backupRecordFromRow, csvFromRows, optionalBackupCollectionFiles, resolveLegacyCategory } from '../csv-backup.mjs'
+import { isValidIsbn, normalizeIsbn } from '../isbn.mjs'
 
 test('exporta o modelo de acervo CSV e preserva valores com separadores e aspas', () => {
   const rows = [
-    ['ID do documento', 'Código', 'Título', 'Autor', 'Editora', 'ID da categoria', 'Categoria', 'Ano', 'Localização', 'Sinopse', 'URL da capa', 'Disponíveis', 'Total', 'Tombamento', 'Status', 'ID da escola', 'Nome da escola', 'Criado em', 'Atualizado em'],
-    ['book-1', 'CF-0002', 'Título; "especial"', 'Autora', 'Editora', 'CF', 'Contos', '1991', 'Estante 1; prateleira 1', 'Sinopse, com vírgula', 'https://exemplo.test/capa.jpg', '15', '15', '123456789', 'disponivel', 'escola_1', 'Escola de teste', '2026-10-09T13:58:30.757Z', '2026-10-09T14:11:57.012Z']
+    ['ID do documento', 'Código', 'Título', 'Autor', 'Editora', 'ID da categoria', 'Categoria', 'Ano', 'Localização', 'Sinopse', 'URL da capa', 'Disponíveis', 'Total', 'ISBN', 'Referência anterior', 'Status', 'ID da escola', 'Nome da escola', 'Criado em', 'Atualizado em'],
+    ['book-1', 'CF-0002', 'Título; "especial"', 'Autora', 'Editora', 'CF', 'Contos', '1991', 'Estante 1; prateleira 1', 'Sinopse, com vírgula', 'https://exemplo.test/capa.jpg', '15', '15', '0306406152', '123456789', 'disponivel', 'escola_1', 'Escola de teste', '2026-10-09T13:58:30.757Z', '2026-10-09T14:11:57.012Z']
   ]
   const csv = `\uFEFF${csvFromRows(rows)}`
-  const workbook = XLSX.read(csv, { type: 'string', raw: false })
-  const parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '', raw: false })
+  const workbook = XLSX.read(csv, { type: 'string', raw: true })
+  const parsedRows = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1, defval: '', raw: true })
 
   const book = backupRecordFromRow(parsedRows[0], parsedRows[1], 'books')
   assert.equal(book.id, 'book-1')
@@ -20,9 +21,18 @@ test('exporta o modelo de acervo CSV e preserva valores com separadores e aspas'
   assert.equal(book.available, 15)
   assert.equal(book.synopsis, 'Sinopse, com vírgula')
   assert.equal(book.coverUrl, 'https://exemplo.test/capa.jpg')
+  assert.equal(book.isbn, '0306406152')
+  assert.equal(book.legacyCatalogReference, '123456789')
+  assert.equal(isValidIsbn(book.isbn), true)
+  assert.equal(normalizeIsbn('0-306-40615-2'), '0306406152')
+  assert.equal(isValidIsbn('9780306406158'), false)
   assert.equal(book.status, 'disponivel')
   assert.equal(book.schoolId, 'escola_1')
   assert.ok(book.createdAt instanceof Date)
+
+  const legacyBook = backupRecordFromRow(['Código', 'Tombamento'], ['CF-0003', 'pat-123'], 'books')
+  assert.equal(legacyBook.legacyCatalogReference, 'pat-123')
+  assert.equal(legacyBook.isbn, undefined)
 })
 
 test('reconhece os conjuntos CSV necessários para restaurar backup completo', () => {

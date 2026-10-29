@@ -60,7 +60,8 @@ export const csvHeaderAliases = {
   localizacao: ['localizacao', 'estante', 'prateleira', 'local'],
   disponiveis: ['disponiveis', 'quantidade disponivel', 'exemplares disponiveis'],
   total: ['total', 'quantidade', 'quantidade total', 'quantidade de exemplares', 'exemplares'],
-  tombamento: ['tombamento', 'numero de tombamento', 'patrimonio'],
+  isbn: ['isbn', 'isbn 10', 'isbn 13', 'numero isbn'],
+  legacyCatalogReference: ['referencia anterior', 'referencia legada', 'tombamento', 'numero de tombamento', 'patrimonio'],
   status: ['status'],
   sinopse: ['sinopse', 'synopsis'],
   capa: ['url da capa', 'capa url', 'cover url', 'coverurl'],
@@ -85,7 +86,8 @@ const bookBackupFields = {
   capa: 'coverUrl',
   disponiveis: 'available',
   total: 'total',
-  tombamento: 'tombamento',
+  isbn: 'isbn',
+  legacyCatalogReference: 'legacyCatalogReference',
   status: 'status',
   schoolId: 'schoolId',
   schoolName: 'schoolName',
@@ -121,7 +123,12 @@ export function backupRecordFromRow(headers, row, collectionName) {
     const field = collectionName === 'books'
       ? bookBackupFields[alias] || String(header).trim()
       : String(header).trim()
-    if (field) record[field] = parseBackupCell(row[index])
+    if (field) {
+      const value = field === 'isbn' || field === 'legacyCatalogReference'
+        ? String(row[index] ?? '').trim()
+        : parseBackupCell(row[index])
+      record[field] = value
+    }
   })
   return record
 }
