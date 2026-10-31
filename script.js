@@ -1944,10 +1944,6 @@ function resetAdminState() {
     return selectedLabelBooks().reduce((total, book) => total + selectedLabelQuantities.get(book.id), 0)
   }
 
-  function labelQrPayload(book) {
-    return JSON.stringify({ v: 1, s: config.currentSchoolId, b: book.id, c: book.code })
-  }
-
   function drawWrappedLabelText(context, text, x, y, maxWidth, lineHeight, maxLines) {
     const words = String(text || '').split(/\s+/).filter(Boolean)
     const lines = []
@@ -1974,77 +1970,89 @@ function resetAdminState() {
   }
 
   async function createBookLabelCanvas(book) {
-    const qrModule = await import('https://cdn.jsdelivr.net/npm/qrcode@1.5.4/+esm')
-    const toDataURL = qrModule.toDataURL || qrModule.default?.toDataURL
-    if (!toDataURL) throw new Error('O gerador QR não está disponível.')
-
-    const qrDataUrl = await toDataURL(labelQrPayload(book), {
-      errorCorrectionLevel: 'H',
-      margin: 4,
-      width: 420,
-      color: { dark: '#173e2b', light: '#ffffff' }
-    })
-    const qrImage = new Image()
-    qrImage.src = qrDataUrl
-    await qrImage.decode()
-
     const canvas = document.createElement('canvas')
     canvas.width = 1104
     canvas.height = 600
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Não foi possível preparar a etiqueta.')
 
+    const code = String(book.code || '').trim().toUpperCase()
+    if (!/^[\x20-\x7E]+$/.test(code)) {
+      throw new Error('O código do acervo precisa conter apenas caracteres ASCII para gerar o Code 128.')
+    }
+
+    const { default: JsBarcode } = await import('jsbarcode')
+    const barcodeCanvas = document.createElement('canvas')
+    JsBarcode(barcodeCanvas, code, {
+      format: 'CODE128',
+      width: 3,
+      height: 88,
+      displayValue: false,
+      margin: 16,
+      lineColor: '#111111',
+      background: '#ffffff'
+    })
+
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
-    context.strokeStyle = '#d8e3da'
-    context.lineWidth = 4
-    context.strokeRect(2, 2, canvas.width - 4, canvas.height - 4)
+    const centerX = canvas.width / 2
+    const sideMargin = 58
+    const contentWidth = canvas.width - sideMargin * 2
+    context.textAlign = 'center'
+
     context.fillStyle = '#1e5b3d'
-    context.fillRect(0, 0, 18, canvas.height)
-    context.fillStyle = '#1e5b3d'
-    context.font = '700 34px Georgia, serif'
-    context.fillText('LIBRIS', 58, 72)
-    context.fillStyle = '#718078'
-    context.font = '600 24px Arial, sans-serif'
-    context.fillText(String(config.schoolName || 'Biblioteca escolar').toLocaleUpperCase('pt-BR').slice(0, 48), 58, 108, 650)
-    context.strokeStyle = '#e2e9e4'
-    context.lineWidth = 2
-    context.beginPath()
-    context.moveTo(58, 132)
-    context.lineTo(720, 132)
-    context.stroke()
+    context.font = '700 32px Georgia, serif'
+    context.fillText('LIBRIS', centerX, 46)
+    context.fillStyle = '#52645a'
+    context.font = '600 21px Arial, sans-serif'
+    context.fillText(
+      String(config.schoolName || 'Biblioteca escolar').toLocaleUpperCase('pt-BR'),
+      centerX,
+      76,
+      contentWidth
+    )
 
     context.fillStyle = '#24352b'
-    context.font = '700 60px Georgia, serif'
-    drawWrappedLabelText(context, book.title || 'Livro sem título', 58, 198, 650, 68, 2)
-    context.fillStyle = '#4f6256'
-    context.font = '500 38px Arial, sans-serif'
-    drawWrappedLabelText(context, book.author || 'Autoria não informada', 58, 326, 650, 46, 2)
-
+    context.font = '700 62px Georgia, serif'
+    drawWrappedLabelText(context, book.title || 'Livro sem título', centerX, 154, contentWidth, 64, 2)
     context.fillStyle = '#1e5b3d'
     context.font = '700 29px Arial, sans-serif'
-    context.fillText(String(book.categoryName || label(book.categoryId) || '').toLocaleUpperCase('pt-BR').slice(0, 42), 58, 424, 650)
-    context.fillStyle = '#4f6256'
-    context.font = '600 28px Arial, sans-serif'
-    context.fillText(`ISBN: ${String(book.isbn || '—').toLocaleUpperCase('pt-BR').slice(0, 32)}`, 58, 466, 650)
-    context.fillStyle = '#718078'
-    context.font = '600 22px Arial, sans-serif'
-    context.fillText('CÓDIGO DO ACERVO', 58, 508)
-    context.fillStyle = '#24352b'
-    context.font = '700 52px Arial, sans-serif'
-    context.fillText(String(book.code || '').toLocaleUpperCase('pt-BR').slice(0, 18), 58, 566, 650)
+    context.fillText(
+      String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
+      centerX,
+      274,
+      contentWidth
+    )
 
-    context.fillStyle = '#ffffff'
-    context.fillRect(744, 140, 350, 390)
-    context.drawImage(qrImage, 750, 146, 338, 338)
-    context.fillStyle = '#718078'
-    context.font = '700 20px Arial, sans-serif'
-    context.textAlign = 'center'
-    context.fillText('IDENTIFICAÇÃO DIGITAL', 919, 512)
-    context.fillStyle = '#1e5b3d'
-    context.font = '700 22px Arial, sans-serif'
-    context.fillText('ESCANEIE PARA CONFERIR', 919, 542)
-    context.textAlign = 'start'
+    context.fillStyle = '#4f6256'
+    context.font = '500 31px Arial, sans-serif'
+    drawWrappedLabelText(context, book.author || 'Autoria não informada', centerX, 322, contentWidth, 36, 2)
+
+    context.fillStyle = '#24352b'
+    context.font = '700 27px Arial, sans-serif'
+    context.fillText(
+      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
+      centerX,
+      408,
+      contentWidth
+    )
+    context.fillText(`ISBN: ${String(book.isbn || '—')}`, centerX, 445, contentWidth)
+
+    const maxBarcodeWidth = contentWidth
+    const barcodeScale = Math.min(1, maxBarcodeWidth / barcodeCanvas.width)
+    const barcodeWidth = barcodeCanvas.width * barcodeScale
+    const barcodeHeight = barcodeCanvas.height * barcodeScale
+    context.drawImage(
+      barcodeCanvas,
+      centerX - barcodeWidth / 2,
+      466,
+      barcodeWidth,
+      barcodeHeight
+    )
+
+    context.fillStyle = '#24352b'
+    context.font = '700 27px Arial, sans-serif'
+    context.fillText(code, centerX, 584, contentWidth)
 
     return canvas
   }
@@ -2580,8 +2588,8 @@ async function startQrCamera(deviceId = '') {
     video.muted = true
     video.playsInline = true
     if (status) status.textContent = deviceId ? 'Abrindo a câmera selecionada…' : 'Abrindo uma câmera disponível…'
-    const { BrowserQRCodeReader } = await import('@zxing/browser')
-    const reader = new BrowserQRCodeReader()
+    const { BrowserMultiFormatReader } = await import('@zxing/browser')
+    const reader = new BrowserMultiFormatReader()
     const onScan = (result, scanError, controls) => {
       if (result && acceptScannedBook(result.getText())) controls.stop()
       if (scanError && scanError.name !== 'NotFoundException') {
@@ -2590,28 +2598,22 @@ async function startQrCamera(deviceId = '') {
     }
 
     if (status) status.textContent = 'Solicitando acesso à câmera…'
-    const videoConstraints = deviceId
-      ? { deviceId: { exact: deviceId } }
-      : { facingMode: { ideal: 'environment' } }
+    const constraints = {
+      video: deviceId
+        ? { deviceId: { exact: deviceId } }
+        : { facingMode: { ideal: 'environment' } },
+      audio: false
+    }
     try {
-      qrScannerStream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
-        audio: false
-      })
+      qrScannerControls = await reader.decodeFromConstraints(constraints, video, onScan)
     } catch (cameraError) {
       if (deviceId || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(cameraError?.name)) {
         throw cameraError
       }
-      qrScannerStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+      qrScannerControls = await reader.decodeFromConstraints({ video: true, audio: false }, video, onScan)
     }
-    video.srcObject = qrScannerStream
-    if (status) status.textContent = 'Ativando o vídeo…'
-    try {
-      await video.play()
-    } catch (playError) {
-      throw new Error(`O WebView acessou a câmera, mas não conseguiu reproduzir o vídeo: ${playError?.message || String(playError)}`)
-    }
-
+    qrScannerStream = video.srcObject
+    if (!qrScannerStream) throw new Error('O WebView não iniciou o fluxo de vídeo da câmera.')
     const videoTrack = qrScannerStream.getVideoTracks()[0]
     if (!videoTrack || videoTrack.readyState !== 'live') throw new Error('A câmera foi aberta, mas não está enviando vídeo.')
     if (status) status.textContent = 'Câmera conectada; aguardando a primeira imagem…'

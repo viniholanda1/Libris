@@ -62,7 +62,7 @@
         <section class="modal-card small" role="dialog" aria-modal="true" aria-labelledby="aboutModalTitle">
           <button class="modal-close" type="button" data-close="aboutModal" aria-label="Fechar">×</button>
           <h3 id="aboutModalTitle">Sobre o Libris</h3>
-          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.6.</p>
+          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.7.</p>
           <dl class="about-details">
             <div><dt>Desenvolvimento</dt><dd>Vinicius e Alyssa</dd></div>
             <div><dt>Tecnologias</dt><dd>HTML, CSS, JavaScript e Rust (Tauri)</dd></div>
@@ -88,7 +88,7 @@
           </details>
           <details class="help-item">
             <summary>Posso usar um leitor de código de barras?</summary>
-            <p>Sim. Leitores USB 2D comuns funcionam como teclado, sem configuração no Libris. O campo ID do livro fica pronto ao abrir Empréstimos; a leitura é reconhecida automaticamente ou ao enviar Enter. A câmera QR também pode ser usada quando disponível.</p>
+            <p>Sim. Leitores USB 2D comuns funcionam como teclado, sem configuração no Libris. O campo ID do livro fica pronto ao abrir Empréstimos; a leitura é reconhecida automaticamente ou ao enviar Enter. A câmera também pode ler códigos de barras Code 128 e QR codes antigos, quando disponível.</p>
           </details>
           <details class="help-item">
             <summary>Como entrar em tela cheia?</summary>
@@ -688,7 +688,7 @@
       <div class="modal-card small qr-modal-card" role="dialog" aria-modal="true" aria-labelledby="qrScannerTitle">
         <button class="modal-close" type="button" data-close="qrScannerModal" aria-label="Fechar leitor de câmera">×</button>
         <h3 id="qrScannerTitle">Escanear código do livro</h3>
-        <p class="modal-description">Aponte a câmera para o QR code da etiqueta do livro.</p>
+        <p class="modal-description">Aponte a câmera para o código de barras Code 128 ou para um QR code antigo do livro.</p>
         <label id="qrCameraDeviceControl" class="qr-camera-select" hidden>
           <span>Câmera</span>
           <select id="qrCameraDeviceInput" aria-label="Selecionar câmera"></select>

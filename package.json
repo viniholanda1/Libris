@@ -1,6 +1,6 @@
 {
   "name": "Libris",
-  "version": "1.2.6",
+  "version": "1.2.7",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build:hosting": "node build-hosting.js",
@@ -16,6 +16,7 @@
     "@tauri-apps/plugin-shell": "^2.5.0",
     "@zxing/browser": "0.1.5",
     "firebase-admin": "^12.7.0",
+    "jsbarcode": "^3.12.3",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {

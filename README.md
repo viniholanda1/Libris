@@ -1,4 +1,4 @@
-# Libris 1.2.6
+# Libris 1.2.7
 
 Sistema escolar de biblioteca da CREDE, feito com HTML, CSS e JavaScript. Os dados operacionais ficam no IndexedDB da máquina da biblioteca.
 
@@ -50,13 +50,15 @@ Abra `http://localhost:8080` no Chromium. Não abra o HTML diretamente pelo gere
 
 ## Aplicativo desktop Tauri
 
-O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.6. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.6/`.
+O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.7. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.7/`.
+
+Para atualizar a branch `main` e gerar o pacote em um único fluxo, execute `./build-debian.sh` no Ubuntu. O script guarda alterações rastreadas e arquivos não rastreados com `git stash`, atualiza a branch com rebase, restaura as alterações, instala as dependências nativas e arquiva o `.deb` em `versoes/1.2.7/`.
 
 No Ubuntu, o build requer Rust/Cargo e os pacotes `build-essential`, `curl`, `wget`, `file`, `libssl-dev`, `libdbus-1-dev`, `libxdo-dev`, `librsvg2-dev` e `libwebkit2gtk-4.1-dev`. O serviço de credenciais do sistema (Secret Service) deve estar disponível para guardar a senha SMTP. O login CREDE, o acesso à câmera e o envio SMTP devem ser validados no WebView do sistema após a instalação.
 
-Para ler o QR code da etiqueta, clique em **Usar câmera**. O aplicativo autoriza o acesso à câmera no WebView; se o sistema bloquear o dispositivo, confira as permissões do sistema e feche outros aplicativos que possam estar usando-a. Se houver mais de uma câmera, selecione a desejada no próprio leitor. O QR contém a escola, o identificador e o código do livro; o app procura o registro entre os livros já carregados para a escola atual.
+Para ler etiquetas novas, use um leitor USB 2D como teclado ou clique em **Usar câmera** para ler o código de barras Code 128. O leitor da câmera também reconhece QR codes de etiquetas antigas. Se houver mais de uma câmera, selecione a desejada no próprio leitor. Os códigos são correspondidos ao acervo da escola atual.
 
-O **leitor 2D USB** funciona como teclado, sem configuração no Libris: ao abrir Empréstimos, o campo **ID do livro** recebe foco. Escaneie o código de barras ou QR; o app aceita Enter ao final ou detecta o término da leitura automaticamente. A etiqueta contém o QR com os dados do livro, o ISBN e o código do acervo impresso. Também é possível digitar o código, como `LI-0002`.
+O **leitor 2D USB** funciona como teclado, sem configuração no Libris: ao abrir Empréstimos, o campo **ID do livro** recebe foco. Escaneie o código de barras Code 128; o app aceita Enter ao final ou detecta o término da leitura automaticamente. As etiquetas mostram também o título, a categoria, o autor, o tombamento legado e o ISBN. Também é possível digitar o código, como `LI-0002`.
 
 ## Instalar no Chromium/Xubuntu
 
