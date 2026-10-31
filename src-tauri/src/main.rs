@@ -6,26 +6,9 @@ use lettre::{
     transport::smtp::authentication::Credentials,
     Message, SmtpTransport, Transport,
 };
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
-use tauri::{
-    webview::{PermissionKind, PermissionResponse},
-    State,
-};
+use tauri::webview::{PermissionKind, PermissionResponse};
 
 const SMTP_KEYRING_SERVICE: &str = "br.gov.ce.crede17.libris.smtp";
-
-#[tauri::command]
-fn begin_camera_permission_request(camera_request: State<'_, Arc<AtomicBool>>) {
-    camera_request.store(true, Ordering::SeqCst);
-}
-
-#[tauri::command]
-fn clear_camera_permission_request(camera_request: State<'_, Arc<AtomicBool>>) {
-    camera_request.store(false, Ordering::SeqCst);
-}
 
 fn smtp_keyring_entry(school_id: &str) -> Result<Entry, String> {
     if school_id.is_empty()
@@ -203,25 +186,19 @@ fn send_email_blocking(
 }
 
 fn main() {
-    let camera_request = Arc::new(AtomicBool::new(false));
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
-        .manage(Arc::clone(&camera_request))
         .invoke_handler(tauri::generate_handler![
-            begin_camera_permission_request,
-            clear_camera_permission_request,
             save_smtp_password,
             has_smtp_password,
             delete_smtp_password,
             send_email
         ])
-        .on_permission_request(move |_, kind| match kind {
-            PermissionKind::Camera if camera_request.swap(false, Ordering::SeqCst) => {
-                PermissionResponse::Allow
-            }
+        .on_permission_request(|_, kind| match kind {
+            PermissionKind::Camera => PermissionResponse::Allow,
             _ => PermissionResponse::Default,
         })
         .run(tauri::generate_context!())

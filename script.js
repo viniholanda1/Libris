@@ -2436,7 +2436,6 @@ async function notify(id) {
 
 let qrScannerStream = null
 let qrScannerControls = null
-let cameraPermissionPending = false
 let bookCodeScanTimer = null
 
 function stopQrScanner() {
@@ -2453,12 +2452,6 @@ function stopQrScanner() {
   if (video) {
     video.pause()
     video.srcObject = null
-  }
-  if (isTauri() && cameraPermissionPending) {
-    cameraPermissionPending = false
-    invoke('clear_camera_permission_request').catch((err) => {
-      console.warn('Não foi possível limpar o pedido de permissão da câmera:', err)
-    })
   }
 }
 
@@ -2584,13 +2577,6 @@ async function startQrCamera(deviceId = '') {
   }
 
   try {
-    if (status) status.textContent = 'Preparando o acesso à câmera…'
-    if (isTauri()) {
-      if (status) status.textContent = 'Solicitando permissão de câmera ao aplicativo…'
-      await invoke('begin_camera_permission_request')
-      cameraPermissionPending = true
-    }
-
     video.muted = true
     video.playsInline = true
     if (status) status.textContent = deviceId ? 'Abrindo a câmera selecionada…' : 'Abrindo uma câmera disponível…'
@@ -2603,34 +2589,39 @@ async function startQrCamera(deviceId = '') {
       }
     }
 
-    if (status) status.textContent = 'Inicializando o vídeo…'
-    qrScannerControls = deviceId
-      ? await reader.decodeFromVideoDevice(deviceId, video, onScan)
-      : await reader.decodeFromConstraints({ video: true, audio: false }, video, onScan)
+    if (status) status.textContent = 'Solicitando acesso à câmera…'
+    const videoConstraints = deviceId
+      ? { deviceId: { exact: deviceId } }
+      : { facingMode: { ideal: 'environment' } }
+    try {
+      qrScannerStream = await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false
+      })
+    } catch (cameraError) {
+      if (deviceId || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(cameraError?.name)) {
+        throw cameraError
+      }
+      qrScannerStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+    }
+    video.srcObject = qrScannerStream
+    if (status) status.textContent = 'Ativando o vídeo…'
+    try {
+      await video.play()
+    } catch (playError) {
+      throw new Error(`O WebView acessou a câmera, mas não conseguiu reproduzir o vídeo: ${playError?.message || String(playError)}`)
+    }
 
-    qrScannerStream = video.srcObject
-    if (!qrScannerStream) throw new Error('O WebView não iniciou o fluxo de vídeo da câmera.')
     const videoTrack = qrScannerStream.getVideoTracks()[0]
     if (!videoTrack || videoTrack.readyState !== 'live') throw new Error('A câmera foi aberta, mas não está enviando vídeo.')
     if (status) status.textContent = 'Câmera conectada; aguardando a primeira imagem…'
     await waitForCameraFrame(video)
+    qrScannerControls = await reader.decodeFromVideoElement(video, onScan)
     const activeDeviceId = qrScannerStream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId
     await updateQrCameraChoices(activeDeviceId)
 
-    if (isTauri() && cameraPermissionPending) {
-      await invoke('clear_camera_permission_request')
-      cameraPermissionPending = false
-    }
     if (status) status.textContent = 'Câmera pronta. Aponte para o QR code do livro.'
   } catch (err) {
-    if (isTauri() && cameraPermissionPending) {
-      cameraPermissionPending = false
-      try {
-        await invoke('clear_camera_permission_request')
-      } catch (permissionError) {
-        console.warn('Não foi possível limpar o pedido de permissão da câmera:', permissionError)
-      }
-    }
     stopQrScanner()
     console.error('Falha ao iniciar a câmera ou o leitor QR:', err)
     const message = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
@@ -2641,7 +2632,7 @@ async function startQrCamera(deviceId = '') {
           ? 'A câmera está ocupada ou indisponível. Feche outros aplicativos que possam estar usando-a.'
           : err?.name === 'OverconstrainedError' || err?.name === 'ConstraintNotSatisfiedError'
             ? 'A câmera selecionada não é compatível. Escolha outra câmera e tente novamente.'
-            : `Não foi possível iniciar a câmera${err?.name ? ` (${err.name})` : ''}${err?.message ? `: ${err.message}` : ''}.`
+            : `Não foi possível iniciar a câmera${err?.name ? ` (${err.name})` : ''}${err?.message ? `: ${err.message}` : `: ${String(err)}`}.`
     if (status) status.textContent = message
     toast(message, 'error')
   }
