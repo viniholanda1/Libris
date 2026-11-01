@@ -62,7 +62,7 @@
         <section class="modal-card small" role="dialog" aria-modal="true" aria-labelledby="aboutModalTitle">
           <button class="modal-close" type="button" data-close="aboutModal" aria-label="Fechar">×</button>
           <h3 id="aboutModalTitle">Sobre o Libris</h3>
-          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.7.</p>
+          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.8.</p>
           <dl class="about-details">
             <div><dt>Desenvolvimento</dt><dd>Vinicius e Alyssa</dd></div>
             <div><dt>Tecnologias</dt><dd>HTML, CSS, JavaScript e Rust (Tauri)</dd></div>
@@ -311,13 +311,14 @@
                 </label>
               </div>
 
-              <div class="table-wrap table-responsive records-scroll mt-24">
+              <div class="table-wrap table-responsive records-scroll book-catalog-scroll mt-24">
                 <table>
                   <thead>
                     <tr>
                       <th>ID</th>
                       <th>Título</th>
                       <th>Categoria</th>
+                      <th>Tombamento</th>
                       <th>ISBN</th>
                       <th>Quantidade</th>
                       <th>Localização</th>
@@ -743,6 +744,10 @@
           <label>
             <span>ISBN</span>
             <input id="bookIsbnInput" type="text" maxlength="20" placeholder="Ex.: 978-85-..." autocomplete="off" />
+          </label>
+          <label>
+            <span>Tombamento / patrimônio</span>
+            <input id="bookTombamentoInput" type="text" maxlength="100" placeholder="Ex.: PAT-2026-001" autocomplete="off" />
           </label>
           <div style="display:flex; justify-content:flex-end; gap:0.5rem; grid-column: 1 / -1; margin-top: 1rem;">
             <input id="bookIdInput" type="hidden" />

@@ -220,13 +220,32 @@ function renderCategoryList() {
   $$('[data-del-category]').forEach((b) => b.onclick = () => removeCategory(b.dataset.delCategory))
 }
 
-function renderBooks() { 
+function renderBooks() {
   const body = $('#bookTableBody')
-  if (!body) return;
+  if (!body) return
   const q = state.acervoQuery.toLowerCase().trim()
-  const list = state.books.filter((b) => !q || [b.title, b.author, b.code].some((x) => String(x || '').toLowerCase().includes(q)))
-  body.innerHTML = list.length ? list.map((b) => `<tr><td>${esc(b.code)}</td><td>${esc(b.title)}</td><td>${esc(bookCategoryName(b))}</td><td>${esc(b.isbn || 'Não informado')}</td><td>${Number(b.total || 0)}</td><td>${esc(b.shelf || '—')}</td><td><span class="badge ${bookStatus(b) === 'disponivel' ? 'available' : 'borrowed'}">${bookStatus(b) === 'disponivel' ? 'Disponível' : 'Emprestado'}</span></td><td><div class="action-row"><button class="small-btn primary" type="button" data-edit-book="${b.id}">Editar</button><button class="small-btn danger" type="button" data-del-book="${b.id}">Apagar</button></div></td></tr>`).join('') : '<tr><td colspan="8">Nenhum livro cadastrado.</td></tr>';
-  $$('[data-edit-book]').forEach((b) => b.onclick = () => editBook(b.dataset.editBook)); 
+  const list = state.books.filter((book) => !q || [
+    book.title,
+    book.author,
+    book.code,
+    book.isbn,
+    book.legacyCatalogReference || book.tombamento
+  ].some((value) => String(value || '').toLocaleLowerCase('pt-BR').includes(q)))
+  body.innerHTML = list.length ? list.map((book) => {
+    const status = bookStatus(book)
+    return `<tr>
+      <td>${esc(book.code)}</td>
+      <td>${esc(book.title)}</td>
+      <td>${esc(bookCategoryName(book))}</td>
+      <td>${esc(book.legacyCatalogReference || book.tombamento || '—')}</td>
+      <td>${esc(book.isbn || 'Não informado')}</td>
+      <td>${Number(book.total || 0)}</td>
+      <td>${esc(book.shelf || '—')}</td>
+      <td><span class="badge ${status === 'disponivel' ? 'available' : 'borrowed'}">${status === 'disponivel' ? 'Disponível' : 'Emprestado'}</span></td>
+      <td><div class="action-row"><button class="small-btn primary" type="button" data-edit-book="${esc(book.id)}">Editar</button><button class="small-btn danger" type="button" data-del-book="${esc(book.id)}">Apagar</button></div></td>
+    </tr>`
+  }).join('') : '<tr><td colspan="9">Nenhum livro cadastrado.</td></tr>'
+  $$('[data-edit-book]').forEach((button) => button.onclick = () => editBook(button.dataset.editBook))
   $$('[data-del-book]').forEach((b) => b.onclick = () => removeBook(b.dataset.delBook))
 }
 
@@ -884,6 +903,7 @@ async function addBook(event) {
   const author = $('#bookAuthorInput')?.value.trim()
   const publisher = $('#bookPublisherInput')?.value.trim()
   const enteredIsbn = $('#bookIsbnInput')?.value.trim() || ''
+  const legacyCatalogReference = $('#bookTombamentoInput')?.value.trim() || ''
   const existingBook = editingId ? state.books.find((item) => item.id === editingId) : null
   const existingMeta = editingId ? { synopsis: existingBook?.synopsis || '', coverUrl: existingBook?.coverUrl || '' } : await lookupBookMetadata(title, author, publisher)
   const book = {
@@ -895,7 +915,7 @@ async function addBook(event) {
     shelf: $('#bookShelfInput')?.value.trim() || '',
     total: Number($('#bookQuantityInput')?.value || 1),
     isbn: normalizeIsbn(enteredIsbn),
-    legacyCatalogReference: existingBook?.legacyCatalogReference || existingBook?.tombamento || '',
+    legacyCatalogReference,
     synopsis: existingMeta.synopsis,
     coverUrl: existingMeta.coverUrl
   }
@@ -1967,6 +1987,7 @@ function resetAdminState() {
       visibleLines[visibleLines.length - 1] = `${lastLine.trimEnd()}...`
     }
     visibleLines.forEach((visibleLine, index) => context.fillText(visibleLine, x, y + index * lineHeight))
+    return visibleLines.length
   }
 
   async function createBookLabelCanvas(book) {
@@ -2000,59 +2021,121 @@ function resetAdminState() {
     const contentWidth = canvas.width - sideMargin * 2
     context.textAlign = 'center'
 
+    context.font = '700 40px Arial'
+    const badgeWidth = Math.min(420, context.measureText(code).width + 36)
+    const badgeX = canvas.width - sideMargin - badgeWidth
+    context.fillStyle = '#1a241d'
+    context.fillRect(badgeX, 16, badgeWidth, 58)
+    context.fillStyle = '#ffffff'
+    context.fillText(code, badgeX + badgeWidth / 2, 56, badgeWidth - 18)
+
     context.fillStyle = '#1e5b3d'
-    context.font = '700 32px Georgia, serif'
-    context.fillText('LIBRIS', centerX, 46)
+    context.font = '700 36px Georgia, serif'
+    context.textAlign = 'left'
+    context.fillText('LIBRIS', sideMargin, 47)
     context.fillStyle = '#52645a'
-    context.font = '600 21px Arial, sans-serif'
+    context.font = '600 23px Arial, sans-serif'
     context.fillText(
       String(config.schoolName || 'Biblioteca escolar').toLocaleUpperCase('pt-BR'),
-      centerX,
-      76,
-      contentWidth
+      sideMargin,
+      80,
+      canvas.width - sideMargin * 2 - badgeWidth - 28
     )
 
+    context.beginPath()
+    context.moveTo(sideMargin, 98)
+    context.lineTo(canvas.width - sideMargin, 98)
+    context.strokeStyle = '#d9e0db'
+    context.lineWidth = 1.5
+    context.stroke()
+
+    context.textAlign = 'center'
     context.fillStyle = '#24352b'
-    context.font = '700 62px Georgia, serif'
-    drawWrappedLabelText(context, book.title || 'Livro sem título', centerX, 154, contentWidth, 64, 2)
-    context.fillStyle = '#1e5b3d'
-    context.font = '700 29px Arial, sans-serif'
-    context.fillText(
-      String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
+    context.font = '700 70px Georgia, serif'
+    const titleY = 154
+    const titleLineCount = drawWrappedLabelText(
+      context,
+      book.title || 'Livro sem título',
       centerX,
-      274,
-      contentWidth
+      titleY,
+      contentWidth,
+      58,
+      2
     )
 
     context.fillStyle = '#4f6256'
-    context.font = '500 31px Arial, sans-serif'
-    drawWrappedLabelText(context, book.author || 'Autoria não informada', centerX, 322, contentWidth, 36, 2)
-
-    context.fillStyle = '#24352b'
-    context.font = '700 27px Arial, sans-serif'
-    context.fillText(
-      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
+    context.font = 'italic 500 42px Arial, sans-serif'
+    const authorY = titleY + (titleLineCount - 1) * 58 + 78
+    const authorLineCount = drawWrappedLabelText(
+      context,
+      book.author || 'Autoria não informada',
       centerX,
-      408,
-      contentWidth
+      authorY,
+      contentWidth,
+      42,
+      2
     )
-    context.fillText(`ISBN: ${String(book.isbn || '—')}`, centerX, 445, contentWidth)
+
+    const category = String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR')
+    context.font = '700 30px Arial, sans-serif'
+    const categoryWidth = Math.min(contentWidth, context.measureText(category).width + 42)
+    const categoryX = centerX - categoryWidth / 2
+    const categoryY = authorY + (authorLineCount - 1) * 42 + 38
+    context.fillStyle = '#edf4ef'
+    context.fillRect(categoryX, categoryY, categoryWidth, 48)
+    context.fillStyle = '#1e5b3d'
+    context.fillText(category, centerX, categoryY + 34, categoryWidth - 22)
+
+    const detailsX = 174
+    const detailsY = categoryY + 50
+    const detailsWidth = canvas.width - detailsX * 2
+    const detailsHeight = 62
+    const detailColumnWidth = detailsWidth / 2
+    context.fillStyle = '#f3f7f4'
+    context.fillRect(detailsX, detailsY, detailsWidth, detailsHeight)
+    context.beginPath()
+    context.moveTo(centerX, detailsY + 10)
+    context.lineTo(centerX, detailsY + detailsHeight - 10)
+    context.strokeStyle = '#d9e0db'
+    context.lineWidth = 1
+    context.stroke()
+
+    context.fillStyle = '#52645a'
+    context.font = '700 18px Arial, sans-serif'
+    context.fillText('TOMBAMENTO', detailsX + detailColumnWidth / 2, detailsY + 21, detailColumnWidth - 20)
+    context.fillText('ISBN', centerX + detailColumnWidth / 2, detailsY + 21, detailColumnWidth - 20)
+    context.fillStyle = '#24352b'
+    context.font = '700 29px Arial, sans-serif'
+    context.fillText(
+      String(book.legacyCatalogReference || book.tombamento || '—'),
+      detailsX + detailColumnWidth / 2,
+      detailsY + 51,
+      detailColumnWidth - 20
+    )
+    context.fillText(
+      String(book.isbn || '—'),
+      centerX + detailColumnWidth / 2,
+      detailsY + 51,
+      detailColumnWidth - 20
+    )
 
     const maxBarcodeWidth = contentWidth
-    const barcodeScale = Math.min(1, maxBarcodeWidth / barcodeCanvas.width)
-    const barcodeWidth = barcodeCanvas.width * barcodeScale
+    const barcodeTop = detailsY + detailsHeight + 2
+    const maxBarcodeHeight = canvas.height - barcodeTop - 18
+    const barcodeScale = Math.min(
+      2,
+      maxBarcodeWidth / barcodeCanvas.width,
+      maxBarcodeHeight / barcodeCanvas.height
+    )
+    const barcodeWidth = Math.min(maxBarcodeWidth, barcodeCanvas.width * barcodeScale * 1.25)
     const barcodeHeight = barcodeCanvas.height * barcodeScale
     context.drawImage(
       barcodeCanvas,
       centerX - barcodeWidth / 2,
-      466,
+      barcodeTop,
       barcodeWidth,
       barcodeHeight
     )
-
-    context.fillStyle = '#24352b'
-    context.font = '700 27px Arial, sans-serif'
-    context.fillText(code, centerX, 584, contentWidth)
 
     return canvas
   }
@@ -2316,6 +2399,7 @@ function editBook(id) {
   if ($('#bookShelfInput')) $('#bookShelfInput').value = book.shelf || ''
   if ($('#bookQuantityInput')) $('#bookQuantityInput').value = Number(book.total || 1)
   if ($('#bookIsbnInput')) $('#bookIsbnInput').value = book.isbn || ''
+  if ($('#bookTombamentoInput')) $('#bookTombamentoInput').value = book.legacyCatalogReference || book.tombamento || ''
   
   const titleHeader = $('#bookModalTitle')
   if (titleHeader) titleHeader.textContent = 'Editar livro'
