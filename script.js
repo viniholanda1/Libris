@@ -143,6 +143,11 @@ const available = (b) => Number(b.available || 0) > 0
 const bookStatus = (b) => available(b) ? 'disponivel' : 'emprestado'
 const date = (v) => v?.toDate ? v.toDate() : v ? new Date(v) : null
 const formatDate = (v) => date(v)?.toLocaleDateString('pt-BR') || '—'
+function dateTimeLocalValue(value) {
+  const parsed = date(value)
+  if (!(parsed instanceof Date) || Number.isNaN(parsed.getTime())) return ''
+  return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
+}
 const overdue = (l) => {
   const dueDate = date(l.dueAt)
   return l.status === 'active' && dueDate instanceof Date && !Number.isNaN(dueDate.getTime()) && dueDate < new Date()
@@ -316,7 +321,10 @@ function renderReaders() {
           : true
     return matchesFilter && (!q || [reader.name, reader.type, reader.role, reader.matricula].some((x) => String(x || '').toLowerCase().includes(q)))
   })
-  body.innerHTML = list.length ? list.map((r) => `<tr><td>${esc(r.name)}</td><td>${esc(r.type || r.role || 'Aluno')}</td><td>${esc(r.course || r.class || 'Não se aplica')}</td><td>${esc(r.type === 'Aluno' ? r.matricula : r.cpf || 'Não informado')}</td><td>${esc(r.email || '—')}<br><small>${esc(r.phone || '')}</small></td><td><div class="action-row"><button class="small-btn primary" type="button" data-edit-reader="${r.id}">Editar</button><button class="small-btn danger" type="button" data-del-reader="${r.id}">Apagar</button></div></td></tr>`).join('') : '<tr><td colspan="6">Nenhum leitor cadastrado.</td></tr>';
+  body.innerHTML = list.length ? list.map((r) => {
+    const course = isStudentReader(r) ? r.course || r.class || '—' : 'Outros'
+    return `<tr><td>${esc(r.name)}</td><td>${esc(r.type || r.role || 'Aluno')}</td><td>${esc(course)}</td><td>${esc(isStudentReader(r) ? r.matricula || 'Não informado' : r.cpf || 'Não informado')}</td><td>${esc(r.email || '—')}<br><small>${esc(r.phone || '')}</small></td><td><div class="action-row"><button class="small-btn primary" type="button" data-edit-reader="${esc(r.id)}">Editar</button><button class="small-btn danger" type="button" data-del-reader="${esc(r.id)}">Apagar</button></div></td></tr>`
+  }).join('') : '<tr><td colspan="6">Nenhum leitor cadastrado.</td></tr>'
   $$('[data-edit-reader]').forEach((b) => b.onclick = () => editReader(b.dataset.editReader)); 
   $$('[data-del-reader]').forEach((b) => b.onclick = () => removeReader(b.dataset.delReader)); 
   renderReaderSelector()
@@ -357,11 +365,12 @@ function updateLoanQuantityLimit(reader = null) {
   const checkoutForm = field?.closest('.checkout-form')
   if (!field || !input) return
 
-  if (!isTeacherReader(reader)) {
+  if (!reader) {
     field.hidden = true
     checkoutForm?.classList.remove('has-loan-quantity')
     input.value = '1'
     input.removeAttribute('max')
+    input.disabled = false
     if (help) help.hidden = true
     return
   }
@@ -371,7 +380,7 @@ function updateLoanQuantityLimit(reader = null) {
   const bookCode = $('#bookCodeInput')?.value.trim().toUpperCase()
   const book = state.books.find((item) => item.code?.toUpperCase() === bookCode)
   const remainingLimit = Math.max(0, getLoanLimitForReader(reader) - activeLoanCopiesForReader(reader.id))
-  const maximum = Math.min(book?.available ?? remainingLimit, remainingLimit)
+  const maximum = Math.min(book ? Number(book.available || 0) : remainingLimit, remainingLimit)
   input.max = String(maximum)
   input.disabled = maximum < 1
   input.value = String(Math.max(1, Math.min(Number(input.value) || 1, maximum || 1)))
@@ -388,6 +397,28 @@ function updateLoanQuantityLimit(reader = null) {
 }
 
 function renderBars(target, data) { if (!target) return; if (!data.length) { target.innerHTML = '<p class="empty-state">Sem dados.</p>'; return }; const max = Math.max(...data.map((x) => x.value), 1); target.innerHTML = data.map((x) => `<div class="bar-row"><span>${esc(x.label)}</span><div class="bar-track"><div class="bar-fill" style="width:${x.value / max * 100}%"></div></div><strong>${x.value}</strong></div>`).join('') }
+
+function monthlyBookRegistrationData(books, referenceDate = new Date(), monthCount = 6) {
+  const months = Array.from({ length: monthCount }, (_, index) => {
+    const monthDate = new Date(referenceDate.getFullYear(), referenceDate.getMonth() - monthCount + 1 + index, 1)
+    return {
+      key: `${monthDate.getFullYear()}-${monthDate.getMonth()}`,
+      label: monthDate.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', ''),
+      value: 0
+    }
+  })
+  const monthByKey = new Map(months.map((month) => [month.key, month]))
+
+  books.forEach((book) => {
+    const createdAt = date(book.createdAt)
+    if (!(createdAt instanceof Date) || Number.isNaN(createdAt.getTime())) return
+    const month = monthByKey.get(`${createdAt.getFullYear()}-${createdAt.getMonth()}`)
+    const quantity = Number(book.total || 0)
+    if (month && Number.isFinite(quantity) && quantity > 0) month.value += quantity
+  })
+
+  return months
+}
 
 function renderDashboard() {
   const active = state.loans.filter((l) => l.status === 'active')
@@ -504,6 +535,8 @@ function renderDashboard() {
     if (month)     month.value += loanQuantity(loan)
   })
   renderBars($('#monthlyLoanChart'), monthCounts.some((month) => month.value > 0) ? monthCounts : [])
+  const monthlyBookCounts = monthlyBookRegistrationData(state.books)
+  renderBars($('#monthlyChart'), monthlyBookCounts.some((month) => month.value > 0) ? monthlyBookCounts : [])
 
   const readerTypeCounts = new Map([
     ['Alunos', 0],
@@ -611,6 +644,7 @@ function dashboardExportData() {
     const bucket = monthlyByKey.get(`${createdAt.getFullYear()}-${createdAt.getMonth()}`)
     if (bucket) bucket.value += loanQuantity(loan)
   })
+  const monthlyBookBuckets = monthlyBookRegistrationData(state.books, period.now)
   return {
     ...period,
     readerById,
@@ -623,6 +657,7 @@ function dashboardExportData() {
       { title: 'Empréstimos por Curso/Turma', kind: 'bars', data: groupLoans((loan) => loan.readerCourse || 'Não informado') },
       { title: 'Top Leitores', kind: 'bars', data: groupLoans((loan) => loan.readerName || 'Leitor') },
       { title: 'Empréstimos por mês', kind: 'bars', data: monthlyBuckets.filter((bucket) => bucket.value > 0) },
+      { title: 'Evolução Mensal do Acervo', kind: 'bars', data: monthlyBookBuckets.filter((bucket) => bucket.value > 0) },
       { title: 'Perfil dos leitores', kind: 'donut', data: [
         { label: 'Alunos', value: state.readers.filter(isStudentReader).length },
         { label: 'Professores', value: state.readers.filter(isTeacherReader).length },
@@ -637,7 +672,14 @@ function dashboardExportData() {
 function createDashboardExportCanvas(data) {
   const canvas = document.createElement('canvas')
   canvas.width = 1600
-  canvas.height = 2263
+  const columns = 2
+  const margin = 64
+  const gapX = 28
+  const gapY = 24
+  const top = 158
+  const rows = Math.ceil(data.charts.length / columns)
+  const cardHeight = (2263 - top - margin - gapY * 3) / 4
+  canvas.height = Math.ceil(top + margin + cardHeight * rows + gapY * Math.max(0, rows - 1))
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Não foi possível preparar a imagem dos gráficos.')
   const dark = document.documentElement.dataset.theme === 'dark' ||
@@ -653,13 +695,7 @@ function createDashboardExportCanvas(data) {
   context.fillStyle = palette.muted
   context.font = '24px Arial'
   context.fillText(`${config.schoolName || 'Biblioteca escolar'} · ${data.label}`, 64, 120)
-  const columns = 2
-  const margin = 64
-  const gapX = 28
-  const gapY = 24
-  const top = 158
   const cardWidth = (canvas.width - margin * 2 - gapX) / columns
-  const cardHeight = (canvas.height - top - margin - gapY * 3) / 4
   data.charts.forEach((chart, index) => {
     const column = index % columns
     const row = Math.floor(index / columns)
@@ -1053,6 +1089,18 @@ async function removeReader(id) {
 
 /* Loans */
 async function registerLoan() {
+  if (loanRegistrationPending) return
+  loanRegistrationPending = true
+  try {
+    await submitLoan()
+  } finally {
+    loanRegistrationPending = false
+  }
+}
+
+let loanRegistrationPending = false
+
+async function submitLoan() {
   const button = $('#registerLoanBtn')
   const code = $('#bookCodeInput')?.value.trim().toUpperCase()
   const text = $('#readerInput')?.value.trim()
@@ -1065,27 +1113,36 @@ async function registerLoan() {
     return toast(!book ? 'Livro não encontrado.' : 'Leitor não encontrado.', 'error')
   }
 
-  const quantity = isTeacherReader(reader) ? Number($('#loanQuantity')?.value || 1) : 1
-  const activeLoansForReader = activeLoanCopiesForReader(reader.id)
+  const quantity = Number($('#loanQuantity')?.value || 1)
   const loanLimit = getLoanLimitForReader(reader)
 
   if (!Number.isSafeInteger(quantity) || quantity < 1) {
     return toast('Informe uma quantidade inteira de exemplares maior que zero.', 'error')
   }
 
+  let activeLoansSnap
+  try {
+    activeLoansSnap = await getDocs(query(
+      collection(db, 'loans'),
+      where('schoolId', '==', config.currentSchoolId),
+      where('readerId', '==', reader.id),
+      where('status', '==', 'active')
+    ))
+  } catch (err) {
+    error(err, 'Não foi possível validar os empréstimos ativos deste leitor.')
+    return
+  }
+
+  const activeLoansForReader = activeLoansSnap.docs.reduce(
+    (total, loanDoc) => total + loanQuantity(loanDoc.data()),
+    0
+  )
+
   if (activeLoansForReader + quantity > loanLimit) {
     return toast(`O limite para ${reader.role || reader.type || 'este perfil'} é de ${loanLimit} exemplares ativos. Já possui ${activeLoansForReader}; pode emprestar mais ${Math.max(0, loanLimit - activeLoansForReader)}.`, 'error')
   }
 
-  const duplicateLoansSnap = await getDocs(query(
-    collection(db, 'loans'),
-    where('schoolId', '==', config.currentSchoolId),
-    where('readerId', '==', reader.id),
-    where('bookId', '==', book.id),
-    where('status', '==', 'active')
-  ))
-
-  if (!duplicateLoansSnap.empty) {
+  if (activeLoansSnap.docs.some((loanDoc) => loanDoc.data().bookId === book.id)) {
     return toast('Este leitor já possui um empréstimo ativo para este mesmo livro!', 'error')
   }
 
@@ -1992,8 +2049,10 @@ function resetAdminState() {
 
   async function createBookLabelCanvas(book) {
     const canvas = document.createElement('canvas')
+    // Mantemos o tamanho padrão de etiqueta térmica larga/padrão A4
     canvas.width = 1104
     canvas.height = 600
+
     const context = canvas.getContext('2d')
     if (!context) throw new Error('Não foi possível preparar a etiqueta.')
 
@@ -2002,140 +2061,114 @@ function resetAdminState() {
       throw new Error('O código do acervo precisa conter apenas caracteres ASCII para gerar o Code 128.')
     }
 
+    // 1. Gera o Código de Barras via biblioteca
     const { default: JsBarcode } = await import('jsbarcode')
     const barcodeCanvas = document.createElement('canvas')
     JsBarcode(barcodeCanvas, code, {
       format: 'CODE128',
       width: 3,
-      height: 88,
-      displayValue: false,
-      margin: 16,
+      height: 85,
+      displayValue: false, // Nós desenharemos o ID base em destaque manualmente abaixo
+      margin: 8,
       lineColor: '#111111',
       background: '#ffffff'
     })
 
+    // 2. Prepara o fundo do Canvas
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
+
     const centerX = canvas.width / 2
     const sideMargin = 58
     const contentWidth = canvas.width - sideMargin * 2
-    context.textAlign = 'center'
 
-    context.font = '700 40px Arial'
-    const badgeWidth = Math.min(420, context.measureText(code).width + 36)
+    context.font = '700 36px Arial'
+    const badgeWidth = Math.min(420, contentWidth, context.measureText(code).width + 40)
     const badgeX = canvas.width - sideMargin - badgeWidth
-    context.fillStyle = '#1a241d'
-    context.fillRect(badgeX, 16, badgeWidth, 58)
-    context.fillStyle = '#ffffff'
-    context.fillText(code, badgeX + badgeWidth / 2, 56, badgeWidth - 18)
+    const headerWidth = Math.max(0, badgeX - sideMargin - 24)
 
-    context.fillStyle = '#1e5b3d'
-    context.font = '700 36px Georgia, serif'
+    // 3. Cabeçalho LIBRIS e Escola
     context.textAlign = 'left'
-    context.fillText('LIBRIS', sideMargin, 47)
+    context.fillStyle = '#1e5b3d'
+    context.font = '700 32px Georgia, serif'
+    context.fillText('LIBRIS', sideMargin, 42, headerWidth)
+
     context.fillStyle = '#52645a'
-    context.font = '600 23px Arial, sans-serif'
+    context.font = '600 21px Arial, sans-serif'
     context.fillText(
       String(config.schoolName || 'Biblioteca escolar').toLocaleUpperCase('pt-BR'),
       sideMargin,
-      80,
-      canvas.width - sideMargin * 2 - badgeWidth - 28
+      76,
+      headerWidth
     )
 
+    // Linha divisória do cabeçalho
     context.beginPath()
     context.moveTo(sideMargin, 98)
     context.lineTo(canvas.width - sideMargin, 98)
     context.strokeStyle = '#d9e0db'
-    context.lineWidth = 1.5
+    context.lineWidth = 2
     context.stroke()
 
+    // 4. Badge/Crachá de Identificação (ID no Topo Direito)
+    // Calcula a largura do badge baseada no tamanho do código
+    context.fillStyle = '#1a241d'
+    context.fillRect(badgeX, 22, badgeWidth, 52)
+
+    context.fillStyle = '#ffffff'
     context.textAlign = 'center'
-    context.fillStyle = '#24352b'
-    context.font = '700 70px Georgia, serif'
-    const titleY = 154
-    const titleLineCount = drawWrappedLabelText(
-      context,
-      book.title || 'Livro sem título',
-      centerX,
-      titleY,
-      contentWidth,
-      58,
-      2
-    )
+    // Alinha o texto exatamente no centro do badge escuro
+    context.fillText(code, badgeX + badgeWidth / 2, 59, badgeWidth - 16)
 
-    context.fillStyle = '#4f6256'
-    context.font = 'italic 500 42px Arial, sans-serif'
-    const authorY = titleY + (titleLineCount - 1) * 58 + 78
-    const authorLineCount = drawWrappedLabelText(
-      context,
-      book.author || 'Autoria não informada',
-      centerX,
-      authorY,
-      contentWidth,
-      42,
-      2
-    )
+    // 5. Corpo da Etiqueta (Hierarquia: Título > Categoria > Autor)
+    context.textAlign = 'center'
+    context.fillStyle = '#1a241d'
+    context.font = '700 62px Georgia, serif'
+    drawWrappedLabelText(context, book.title || 'Livro sem título', centerX, 160, contentWidth, 60, 2)
 
-    const category = String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR')
-    context.font = '700 30px Arial, sans-serif'
-    const categoryWidth = Math.min(contentWidth, context.measureText(category).width + 42)
-    const categoryX = centerX - categoryWidth / 2
-    const categoryY = authorY + (authorLineCount - 1) * 42 + 38
-    context.fillStyle = '#edf4ef'
-    context.fillRect(categoryX, categoryY, categoryWidth, 48)
     context.fillStyle = '#1e5b3d'
-    context.fillText(category, centerX, categoryY + 34, categoryWidth - 22)
+    context.font = '500 29px Arial, sans-serif'
+    context.fillText(
+      String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
+      centerX,
+      280,
+      contentWidth
+    )
 
-    const detailsX = 174
-    const detailsY = categoryY + 50
-    const detailsWidth = canvas.width - detailsX * 2
-    const detailsHeight = 62
-    const detailColumnWidth = detailsWidth / 2
-    context.fillStyle = '#f3f7f4'
-    context.fillRect(detailsX, detailsY, detailsWidth, detailsHeight)
-    context.beginPath()
-    context.moveTo(centerX, detailsY + 10)
-    context.lineTo(centerX, detailsY + detailsHeight - 10)
-    context.strokeStyle = '#d9e0db'
-    context.lineWidth = 1
-    context.stroke()
+    // Autor em itálico para quebrar monotonia visual
+    context.fillStyle = '#4f6256'
+    context.font = 'italic 500 29px Arial, sans-serif'
+    drawWrappedLabelText(context, book.author || 'Autoria não informada', centerX, 325, contentWidth, 34, 2)
 
-    context.fillStyle = '#52645a'
-    context.font = '700 18px Arial, sans-serif'
-    context.fillText('TOMBAMENTO', detailsX + detailColumnWidth / 2, detailsY + 21, detailColumnWidth - 20)
-    context.fillText('ISBN', centerX + detailColumnWidth / 2, detailsY + 21, detailColumnWidth - 20)
+    // 6. Dados Físicos (TOMB e ISBN centralizados)
     context.fillStyle = '#24352b'
-    context.font = '700 29px Arial, sans-serif'
+    context.font = '700 27px Arial, sans-serif'
     context.fillText(
-      String(book.legacyCatalogReference || book.tombamento || '—'),
-      detailsX + detailColumnWidth / 2,
-      detailsY + 51,
-      detailColumnWidth - 20
-    )
-    context.fillText(
-      String(book.isbn || '—'),
-      centerX + detailColumnWidth / 2,
-      detailsY + 51,
-      detailColumnWidth - 20
+      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
+      centerX,
+      395,
+      contentWidth
     )
 
-    const maxBarcodeWidth = contentWidth
-    const barcodeTop = detailsY + detailsHeight + 2
-    const maxBarcodeHeight = canvas.height - barcodeTop - 18
-    const barcodeScale = Math.min(
-      2,
-      maxBarcodeWidth / barcodeCanvas.width,
-      maxBarcodeHeight / barcodeCanvas.height
-    )
-    const barcodeWidth = Math.min(maxBarcodeWidth, barcodeCanvas.width * barcodeScale * 1.25)
+    context.font = '500 24px Arial, sans-serif'
+    context.fillText(`ISBN: ${String(book.isbn || '—')}`, centerX, 428, contentWidth)
+
+    // 7. Renderiza o Código de Barras (Subiu levemente no eixo Y)
+    const barcodeScale = Math.min(1, contentWidth / barcodeCanvas.width)
+    const barcodeWidth = barcodeCanvas.width * barcodeScale
     const barcodeHeight = barcodeCanvas.height * barcodeScale
     context.drawImage(
       barcodeCanvas,
       centerX - barcodeWidth / 2,
-      barcodeTop,
+      432,
       barcodeWidth,
       barcodeHeight
     )
+
+    // 8. Código Base GIGANTE para leitura humana rápida
+    context.fillStyle = '#000000'
+    context.font = '700 52px Arial, sans-serif'
+    context.fillText(code, centerX, 582, contentWidth)
 
     return canvas
   }
@@ -2493,9 +2526,12 @@ function renderLoans() {
     const maximumAttribute = maximum === null ? '' : `max="${maximum}"`
     const renewalLabel = maximum === null ? 'Dias para renovar' : `Dias para renovar (máximo ${maximum})`
     const copyCount = loanQuantity(l)
-    return `<tr><td>${esc(l.bookTitle)}<br><small>${esc(l.bookCode)}${copyCount > 1 ? ` · ${copyCount} exemplares` : ''}</small></td><td>${esc(l.readerName)}</td><td><div>${formatDate(l.dueAt)}</div><small>Prazo: ${selectedDays} dias</small></td><td><span class="badge ${overdue(l) ? 'borrowed' : 'available'}">${overdue(l) ? 'Em atraso' : 'Em dia'}</span></td><td><div class="action-row"><input class="renew-days" type="number" min="1" ${maximumAttribute} value="${renewalDays}" data-renew-days="${esc(l.id)}" aria-label="${renewalLabel}"><button class="small-btn primary" data-return="${esc(l.id)}" type="button">Devolver</button><button class="small-btn warning" data-renew="${esc(l.id)}" type="button">Renovar</button><button class="small-btn danger" data-notify="${esc(l.id)}" type="button">Notificar</button></div></td></tr>`
+    return `<tr><td><strong>${esc(l.bookTitle)}</strong><div class="loan-book-details"><small>${esc(l.bookCode)}</small><small>Empréstimo: ${formatDate(l.createdAt)}</small><small>Quantidade: ${copyCount} ${copyCount === 1 ? 'exemplar' : 'exemplares'}</small></div></td><td>${esc(l.readerName)}</td><td><div>Vencimento: ${formatDate(l.dueAt)}</div><small>Prazo: ${selectedDays} dias</small></td><td><span class="badge ${overdue(l) ? 'borrowed' : 'available'}">${overdue(l) ? 'Em atraso' : 'Em dia'}</span></td><td><div class="action-row"><input class="renew-days" type="number" min="1" ${maximumAttribute} value="${renewalDays}" data-renew-days="${esc(l.id)}" aria-label="${renewalLabel}"><button class="small-btn primary" data-return="${esc(l.id)}" type="button">Devolver</button><button class="small-btn warning" data-renew="${esc(l.id)}" type="button">Renovar</button><button class="small-btn danger" data-notify="${esc(l.id)}" type="button">Notificar</button><button class="small-btn secondary" data-edit-loan="${esc(l.id)}" type="button">Editar</button></div></td></tr>`
   }).join('') : '<tr><td colspan="5" class="text-center">Nenhum empréstimo corresponde à busca e aos filtros.</td></tr>'
 
+  $$('[data-edit-loan]').forEach((button) => {
+    button.onclick = () => openEditLoanModal(button.dataset.editLoan)
+  })
   $$('[data-return]').forEach((b) => b.onclick = () => returnLoan(b.dataset.return))
   $$('[data-renew]').forEach((b) => b.onclick = () => renewLoan(b.dataset.renew))
   $$('[data-notify]').forEach((b) => b.onclick = () => notify(b.dataset.notify))
@@ -2507,6 +2543,142 @@ function renderLoans() {
       state.loanFilter = evt.target.value
       renderLoans()
     }
+  }
+}
+
+function openEditLoanModal(loanId) {
+  const loan = state.loans.find((item) => item.id === loanId && item.status === 'active')
+  const form = $('#loanEditForm')
+  const reader = state.readers.find((item) => item.id === loan?.readerId)
+  const book = state.books.find((item) => item.id === loan?.bookId)
+  if (!loan || !form || !reader || !book) {
+    toast('Não foi possível abrir este empréstimo para edição.', 'error')
+    return
+  }
+
+  const currentQuantity = loanQuantity(loan)
+  const activeCopiesExcludingLoan = Math.max(0, activeLoanCopiesForReader(reader.id) - currentQuantity)
+  const limitCapacity = Math.max(0, getLoanLimitForReader(reader) - activeCopiesExcludingLoan)
+  const stockCapacity = Number(book.available || 0) + currentQuantity
+  const maximum = Math.max(currentQuantity, Math.min(limitCapacity, stockCapacity))
+
+  form.dataset.loanId = loan.id
+  $('#loanStartAtInput').value = dateTimeLocalValue(loan.createdAt)
+  $('#loanDueAtInput').value = dateTimeLocalValue(loan.dueAt)
+  $('#loanEditQuantityInput').value = String(currentQuantity)
+  $('#loanEditQuantityInput').max = String(maximum)
+  $('#loanEditQuantityHelp').textContent = `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}, considerando o estoque e o limite do leitor.`
+  modal('loanEditModal', true)
+}
+
+let loanEditPending = false
+
+async function saveEditedLoan(event) {
+  event.preventDefault()
+  if (loanEditPending) return
+
+  const form = $('#loanEditForm')
+  const button = $('#saveLoanEditBtn')
+  const loanId = form?.dataset.loanId
+  const loan = state.loans.find((item) => item.id === loanId && item.status === 'active')
+  const reader = state.readers.find((item) => item.id === loan?.readerId)
+  const startAt = new Date($('#loanStartAtInput')?.value || '')
+  const dueAt = new Date($('#loanDueAtInput')?.value || '')
+  const quantity = Number($('#loanEditQuantityInput')?.value)
+  if (!loan || !reader) {
+    toast('Este empréstimo não está mais ativo.', 'error')
+    modal('loanEditModal', false)
+    return
+  }
+  if (
+    Number.isNaN(startAt.getTime()) ||
+    Number.isNaN(dueAt.getTime()) ||
+    dueAt <= startAt ||
+    !Number.isSafeInteger(quantity) ||
+    quantity < 1
+  ) {
+    return toast('Confira as datas e informe uma quantidade inteira maior que zero.', 'error')
+  }
+
+  loanEditPending = true
+  loading(button, true, 'Salvando…')
+  try {
+    const activeLoansSnap = await getDocs(query(
+      collection(db, 'loans'),
+      where('schoolId', '==', config.currentSchoolId),
+      where('readerId', '==', reader.id),
+      where('status', '==', 'active')
+    ))
+    const otherActiveCopies = activeLoansSnap.docs
+      .filter((loanDoc) => loanDoc.id !== loanId)
+      .reduce((total, loanDoc) => total + loanQuantity(loanDoc.data()), 0)
+    const loanLimit = getLoanLimitForReader(reader)
+    const maximumByLimit = loanLimit - otherActiveCopies
+    const currentQuantity = loanQuantity(loan)
+    if (quantity > currentQuantity && quantity > maximumByLimit) {
+      return toast(`O limite para ${reader.role || reader.type || 'este perfil'} é de ${loanLimit} exemplares ativos.`, 'error')
+    }
+
+    const startDay = Date.UTC(startAt.getFullYear(), startAt.getMonth(), startAt.getDate())
+    const dueDay = Date.UTC(dueAt.getFullYear(), dueAt.getMonth(), dueAt.getDate())
+    const days = Math.max(1, Math.round((dueDay - startDay) / 86400000))
+    await runTransaction(db, async (tx) => {
+      const loanRef = doc(db, 'loans', loanId)
+      const loanSnap = await tx.get(loanRef)
+      if (!loanSnap.exists() || loanSnap.data().status !== 'active' || loanSnap.data().schoolId !== config.currentSchoolId) {
+        throw new Error('empréstimo inválido')
+      }
+
+      const currentLoan = loanSnap.data()
+      const bookRef = doc(db, 'books', currentLoan.bookId)
+      const bookSnap = await tx.get(bookRef)
+      if (!bookSnap.exists()) throw new Error('livro inválido')
+      const bookData = bookSnap.data()
+      if (bookData.schoolId && bookData.schoolId !== config.currentSchoolId) throw new Error('livro inválido')
+
+      const previousQuantity = loanQuantity(currentLoan)
+      const delta = quantity - previousQuantity
+      const availableCopies = Number(bookData.available || 0)
+      if (delta > availableCopies) throw new Error('estoque insuficiente')
+
+      if (delta !== 0) {
+        const totalCopies = Number(bookData.total || 0)
+        const updatedAvailable = Math.max(0, Math.min(totalCopies, availableCopies - delta))
+        tx.update(bookRef, {
+          available: updatedAvailable,
+          status: updatedAvailable > 0 ? 'disponivel' : 'emprestado',
+          schoolId: bookData.schoolId || config.currentSchoolId,
+          updatedAt: serverTimestamp()
+        })
+      }
+
+      tx.update(loanRef, {
+        createdAt: Timestamp.fromDate(startAt),
+        dueAt: Timestamp.fromDate(dueAt),
+        days,
+        quantity,
+        notices: {},
+        schoolId: config.currentSchoolId,
+        updatedAt: serverTimestamp()
+      })
+    })
+
+    await logAudit('loan_updated', { loanId, startAt, dueAt, quantity }, state.user?.uid || null)
+    modal('loanEditModal', false)
+    toast('Empréstimo atualizado.')
+  } catch (err) {
+    if (err.message === 'estoque insuficiente') {
+      toast('Não há exemplares disponíveis suficientes para aumentar esta quantidade.', 'error')
+    } else if (err.message === 'empréstimo inválido') {
+      toast('Este empréstimo não está mais ativo ou não pertence à escola atual.', 'error')
+    } else if (err.message === 'livro inválido') {
+      toast('O livro deste empréstimo não está disponível na escola atual.', 'error')
+    } else {
+      error(err, 'Não foi possível atualizar o empréstimo.')
+    }
+  } finally {
+    loading(button, false)
+    loanEditPending = false
   }
 }
 
@@ -2526,33 +2698,7 @@ async function notify(id) {
   await updateEmailCredentialStatus('notificationEmailStatus')
 }
 
-let qrScannerStream = null
-let qrScannerControls = null
 let bookCodeScanTimer = null
-
-function stopQrScanner() {
-  try {
-    qrScannerControls?.stop()
-  } catch (err) {
-    console.warn('Não foi possível parar os controles do leitor QR:', err)
-  }
-  qrScannerControls = null
-  const video = $('#qrScannerVideo')
-  const stream = qrScannerStream || video?.srcObject
-  stream?.getTracks().forEach((track) => track.stop())
-  qrScannerStream = null
-  if (video) {
-    video.pause()
-    video.srcObject = null
-  }
-}
-
-function openQrScanner() {
-  stopQrScanner()
-  if ($('#qrScannerStatus')) $('#qrScannerStatus').textContent = 'Solicitando acesso à câmera…'
-  modal('qrScannerModal', true)
-  startQrCamera($('#qrCameraDeviceInput')?.value || '')
-}
 
 function acceptScannedBook(rawValue) {
   const normalizedValue = String(rawValue || '').trim()
@@ -2569,7 +2715,6 @@ function acceptScannedBook(rawValue) {
 
   if (payloadSchoolId && scannedSchoolId !== currentSchoolId) {
     const message = 'Esta etiqueta pertence a outra escola ou está desatualizada. Gere uma nova etiqueta para este acervo.'
-    if ($('#qrScannerStatus')) $('#qrScannerStatus').textContent = message
     toast(message, 'error')
     return false
   }
@@ -2578,150 +2723,14 @@ function acceptScannedBook(rawValue) {
     const message = matchedCode
       ? `Livro ${matchedCode} não encontrado no acervo desta escola.`
       : 'O leitor não enviou um código reconhecível. Confira a etiqueta e tente novamente.'
-    if ($('#qrScannerStatus')) $('#qrScannerStatus').textContent = message
     toast(message, 'error')
     return false
   }
 
   if ($('#bookCodeInput')) $('#bookCodeInput').value = String(book.code || matchedCode).toUpperCase()
-  stopQrScanner()
-  modal('qrScannerModal', false)
   $('#readerInput')?.focus()
   toast(`Livro encontrado: ${book.title}. Selecione o leitor para continuar.`)
   return true
-}
-
-async function updateQrCameraChoices(activeDeviceId = '') {
-  const control = $('#qrCameraDeviceControl')
-  const select = $('#qrCameraDeviceInput')
-  if (!control || !select || !navigator.mediaDevices?.enumerateDevices) return
-
-  try {
-    const devices = (await navigator.mediaDevices.enumerateDevices())
-      .filter((device) => device.kind === 'videoinput')
-    select.replaceChildren()
-
-    const defaultOption = document.createElement('option')
-    defaultOption.value = ''
-    defaultOption.textContent = 'Câmera padrão'
-    select.append(defaultOption)
-
-    devices.forEach((device, index) => {
-      const option = document.createElement('option')
-      option.value = device.deviceId
-      option.textContent = device.label || `Câmera ${index + 1}`
-      select.append(option)
-    })
-
-    select.value = activeDeviceId || ''
-    control.hidden = devices.length < 2
-  } catch (err) {
-    console.warn('Não foi possível listar as câmeras disponíveis:', err)
-    control.hidden = true
-  }
-}
-
-function waitForCameraFrame(video, timeoutMs = 8000) {
-  if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) return Promise.resolve()
-
-  return new Promise((resolve, reject) => {
-    let timeoutId
-    const cleanup = () => {
-      clearTimeout(timeoutId)
-      video.removeEventListener('loadeddata', checkFrame)
-      video.removeEventListener('playing', checkFrame)
-      video.removeEventListener('error', handleError)
-    }
-    const checkFrame = () => {
-      if (video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && video.videoWidth > 0) {
-        cleanup()
-        resolve()
-      }
-    }
-    const handleError = () => {
-      cleanup()
-      reject(new Error(video.error?.message || 'O vídeo da câmera não carregou.'))
-    }
-
-    video.addEventListener('loadeddata', checkFrame)
-    video.addEventListener('playing', checkFrame)
-    video.addEventListener('error', handleError)
-    timeoutId = setTimeout(() => {
-      cleanup()
-      reject(new Error('A câmera foi aberta, mas não enviou imagens. Verifique a lente ou selecione outra câmera.'))
-    }, timeoutMs)
-    checkFrame()
-  })
-}
-
-async function startQrCamera(deviceId = '') {
-  const status = $('#qrScannerStatus')
-  const video = $('#qrScannerVideo')
-  if (!navigator.mediaDevices?.getUserMedia) {
-    const message = 'A câmera não está disponível neste contexto. Use o aplicativo instalado ou acesse pelo HTTPS.'
-    if (status) status.textContent = message
-    toast(message, 'error')
-    return
-  }
-  if (!video) {
-    toast('A janela do leitor de câmera não está disponível.', 'error')
-    return
-  }
-
-  try {
-    video.muted = true
-    video.playsInline = true
-    if (status) status.textContent = deviceId ? 'Abrindo a câmera selecionada…' : 'Abrindo uma câmera disponível…'
-    const { BrowserMultiFormatReader } = await import('@zxing/browser')
-    const reader = new BrowserMultiFormatReader()
-    const onScan = (result, scanError, controls) => {
-      if (result && acceptScannedBook(result.getText())) controls.stop()
-      if (scanError && scanError.name !== 'NotFoundException') {
-        console.warn('Falha durante a leitura do QR code:', scanError)
-      }
-    }
-
-    if (status) status.textContent = 'Solicitando acesso à câmera…'
-    const constraints = {
-      video: deviceId
-        ? { deviceId: { exact: deviceId } }
-        : { facingMode: { ideal: 'environment' } },
-      audio: false
-    }
-    try {
-      qrScannerControls = await reader.decodeFromConstraints(constraints, video, onScan)
-    } catch (cameraError) {
-      if (deviceId || !['OverconstrainedError', 'ConstraintNotSatisfiedError'].includes(cameraError?.name)) {
-        throw cameraError
-      }
-      qrScannerControls = await reader.decodeFromConstraints({ video: true, audio: false }, video, onScan)
-    }
-    qrScannerStream = video.srcObject
-    if (!qrScannerStream) throw new Error('O WebView não iniciou o fluxo de vídeo da câmera.')
-    const videoTrack = qrScannerStream.getVideoTracks()[0]
-    if (!videoTrack || videoTrack.readyState !== 'live') throw new Error('A câmera foi aberta, mas não está enviando vídeo.')
-    if (status) status.textContent = 'Câmera conectada; aguardando a primeira imagem…'
-    await waitForCameraFrame(video)
-    qrScannerControls = await reader.decodeFromVideoElement(video, onScan)
-    const activeDeviceId = qrScannerStream.getVideoTracks()[0]?.getSettings?.().deviceId || deviceId
-    await updateQrCameraChoices(activeDeviceId)
-
-    if (status) status.textContent = 'Câmera pronta. Aponte para o QR code do livro.'
-  } catch (err) {
-    stopQrScanner()
-    console.error('Falha ao iniciar a câmera ou o leitor QR:', err)
-    const message = err?.name === 'NotAllowedError' || err?.name === 'PermissionDeniedError'
-      ? 'Acesso à câmera negado. Permita a câmera nas configurações do sistema e tente novamente.'
-      : err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
-        ? 'Nenhuma câmera foi encontrada. Conecte uma câmera ou use o leitor USB.'
-        : err?.name === 'NotReadableError'
-          ? 'A câmera está ocupada ou indisponível. Feche outros aplicativos que possam estar usando-a.'
-          : err?.name === 'OverconstrainedError' || err?.name === 'ConstraintNotSatisfiedError'
-            ? 'A câmera selecionada não é compatível. Escolha outra câmera e tente novamente.'
-            : `Não foi possível iniciar a câmera${err?.name ? ` (${err.name})` : ''}${err?.message ? `: ${err.message}` : `: ${String(err)}`}.`
-    if (status) status.textContent = message
-    toast(message, 'error')
-  }
 }
 
 function scheduleBookCodeScan(event) {
@@ -2822,6 +2831,7 @@ function setup() {
   if ($('#bookForm')) $('#bookForm').onsubmit = addBook
   if ($('#categoryForm')) $('#categoryForm').onsubmit = addCategory
   if ($('#readerForm')) $('#readerForm').onsubmit = addReader
+  if ($('#loanEditForm')) $('#loanEditForm').onsubmit = saveEditedLoan
   if ($('#librisConfigForm')) $('#librisConfigForm').onsubmit = saveLibrisConfiguration
   if ($('#removeSmtpPasswordBtn')) $('#removeSmtpPasswordBtn').onclick = removeSmtpPassword
   if ($('#loginForm')) $('#loginForm').onsubmit = handleLocalLogin
@@ -2872,14 +2882,6 @@ function setup() {
   if ($('#readerTypeInput')) $('#readerTypeInput').onchange = updateReaderFields
   if ($('#registerLoanBtn')) $('#registerLoanBtn').onclick = registerLoan
   updateLoanDaysLimit(null)
-  if ($('#scanBtn')) $('#scanBtn').onclick = openQrScanner
-  if ($('#qrCameraDeviceInput')) $('#qrCameraDeviceInput').onchange = (event) => {
-    const deviceId = event.currentTarget.value
-    stopQrScanner()
-    if ($('#qrScannerStatus')) $('#qrScannerStatus').textContent = 'Trocando de câmera…'
-    startQrCamera(deviceId)
-  }
-
   if ($('#openBookModalBtn')) $('#openBookModalBtn').onclick = () => { resetBookForm(); modal('bookFormModal', true) }
   if ($('#openReaderModalBtn')) $('#openReaderModalBtn').onclick = () => { resetReaderForm(); modal('readerFormModal', true) }
   const openCategoryModal = () => {
@@ -2957,7 +2959,6 @@ function setup() {
   $$('.modal [data-close]').forEach((b) => b.onclick = () => {
     if (b.dataset.close === 'loginModal' && state.profile?.role !== 'admin') return
     if (b.dataset.close === 'settingsModal' && schoolSetupRequired) return toast('Informe o nome da escola para concluir a configuração inicial.', 'error')
-    if (b.dataset.close === 'qrScannerModal') stopQrScanner()
     modal(b.dataset.close, false)
   })
 

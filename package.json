@@ -14,7 +14,6 @@
     "@tauri-apps/plugin-fs": "^2.7.1",
     "@tauri-apps/plugin-opener": "^2.7.2",
     "@tauri-apps/plugin-shell": "^2.5.0",
-    "@zxing/browser": "0.1.5",
     "firebase-admin": "^12.7.0",
     "jsbarcode": "^3.12.3",
     "xlsx": "^0.18.5"

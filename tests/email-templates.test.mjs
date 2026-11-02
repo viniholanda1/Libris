@@ -18,6 +18,9 @@ test('gera o modelo do aluno com os detalhes do empréstimo e conteúdo escapado
   assert.match(html, /&lt;Livro&gt;/)
   assert.match(html, /29\/10\/2026/)
   assert.match(html, /7 dias/)
+  assert.match(html, /background-color:#21681f/)
+  assert.match(html, /color:#b9c7e3/)
+  assert.match(html, /Mensagem automática enviada pelo sistema Libris/)
   assert.doesNotMatch(html, /\{\{[^}]+\}\}/)
 })
 

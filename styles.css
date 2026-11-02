@@ -50,6 +50,15 @@ body {
 img { max-width: 100%; display: block; }
 button, input, select, textarea { font: inherit; }
 button { min-height: 42px; cursor: pointer; border: 0; background: transparent; }
+.btn, .tab-btn {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 42px;
+  min-height: 42px;
+  line-height: 1.2;
+}
 a { color: inherit; text-decoration: none; }
 
 /* App shell & layout */
@@ -235,9 +244,10 @@ label { display:block; font-size:0.9rem; color:var(--muted); }
 .book-category-field .field-label { margin:0; }
 .book-category-control { display:flex; align-items:center; gap:0.5rem; }
 .book-category-control select { flex:1; min-width:0; }
-.book-category-add, #scanBtn {
+.book-category-add {
   flex:0 0 42px;
   width:42px;
+  height:42px;
   min-height:42px;
   padding:0;
   font-size:1.25rem;
@@ -246,10 +256,10 @@ label { display:block; font-size:0.9rem; color:var(--muted); }
 .checkout-form .form-grid { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(8rem, 0.7fr); }
 .checkout-form.has-loan-quantity .form-grid { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(8rem, 0.7fr) minmax(8rem, 0.7fr); }
 .checkout-form .form-grid > label { min-width:0; }
-.checkout-form .input-row input { flex:1; min-width:0; }
-.checkout-form .input-row #scanBtn { flex:0 0 42px; }
+.checkout-form .input-row { width:100%; }
+.checkout-form .input-row input { flex:1 1 100%; width:100%; min-width:0; }
 .input-row { display:flex; gap:0.5rem; align-items:center; }
-input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="number"], input[type="search"], select, textarea {
+input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="number"], input[type="search"], input[type="date"], input[type="datetime-local"], select, textarea {
   width:100%;
   min-height:42px;
   padding:0.5rem 0.8rem;
@@ -259,6 +269,10 @@ input[type="text"], input[type="email"], input[type="password"], input[type="tel
   color: var(--text);
   outline: none;
   transition: box-shadow var(--transition), border-color var(--transition);
+}
+input[type="text"], input[type="email"], input[type="password"], input[type="tel"], input[type="number"], input[type="search"], input[type="date"], input[type="datetime-local"], select {
+  box-sizing:border-box;
+  height:42px;
 }
 textarea { min-height:6rem; }
 input:focus, select:focus, textarea:focus { border-color:var(--primary); box-shadow:0 0 0 3px rgba(36,87,214,0.2); }
@@ -313,6 +327,7 @@ tr:last-child td { border-bottom: none; }
 .small-btn { min-height:36px; padding:0.4rem 0.62rem; border-radius:0.45rem; font-weight:700; font-size:0.82rem; border:0;}
 
 .small-btn.primary { background:linear-gradient(90deg,var(--primary) 0%,#4679ee 100%); color:#fff; }
+.small-btn.secondary { background:var(--secondary-bg); color:var(--text); border:1px solid var(--secondary-border); }
 .small-btn.warning { background: var(--warning-soft); color: var(--warning); border:1px solid rgba(163,106,32,0.08); }
 .small-btn.danger { background: rgba(158,61,68,0.08); color: var(--danger); border:1px solid rgba(158,61,68,0.06); }
 
@@ -337,6 +352,11 @@ tr:last-child td { border-bottom: none; }
 .settings-form { margin-top:1.15rem; }
 .school-name-field { grid-column:1 / -1; }
 .settings-actions { display:flex; justify-content:flex-end; grid-column:1 / -1; margin-top:0.25rem; }
+.loan-edit-form { margin-top:1rem; }
+.loan-edit-form .field-help { margin:0.25rem 0 0; }
+.loan-edit-actions { display:flex; justify-content:flex-end; gap:0.5rem; grid-column:1 / -1; margin-top:0.25rem; }
+.loan-book-details { display:grid; gap:0.12rem; margin-top:0.2rem; }
+.loan-book-details small { color:var(--muted); font-size:0.78rem; }
 .label-modal { width:min(96vw,1080px); padding:1.5rem; }
 .label-modal-heading { display:flex; align-items:center; gap:0.85rem; margin-bottom:1.2rem; }
 .label-modal-heading h3 { margin:0; }
@@ -490,26 +510,6 @@ tr:last-child td { border-bottom: none; }
 #loginModal .login-form .password-toggle {
   flex: 0 0 2.85rem;
   width: 2.85rem;
-}
-
-.qr-modal-card { width: min(92vw, 520px); }
-.qr-camera-select { display:grid; gap:0.35rem; margin:0.75rem 0; font-weight:700; }
-.qr-scanner-video {
-  display: block;
-  width: 100%;
-  max-height: 65vh;
-  border-radius: 0.6rem;
-  background: #000;
-  object-fit: cover;
-}
-.scanner-status {
-  margin: 0;
-  padding: 0.65rem 0.75rem;
-  border-radius: 0.4rem;
-  background: var(--panel-muted);
-  color: var(--muted);
-  font-size: 0.84rem;
-  line-height: 1.5;
 }
 
 /* Accessibility focus */
@@ -691,7 +691,7 @@ tr:last-child td { border-bottom: none; }
   .admin-header > .action-row { width:100%; }
   .admin-header > .action-row .btn { flex:1 1 auto; }
   .tab-buttons { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); }
-  .tab-buttons .tab-btn { min-width:0; padding-inline:0.35rem; font-size:0.84rem; }
+  .tab-buttons .tab-btn { min-width:0; padding:0.25rem 0.35rem; font-size:0.84rem; }
   .panel { min-width:0; padding:0.8rem; }
   .kpi-grid { gap:0.55rem; }
   .kpi-card { min-width:0; padding:0.75rem; }

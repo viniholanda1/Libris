@@ -8,7 +8,12 @@ const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (character
 
 const renderMessage = (message) => escapeHtml(message).replace(/\r\n|\r|\n/g, '<br>')
 
-function emailFrame(subject, schoolName, subtitle, content) {
+function emailFrame(subject, schoolName, subtitle, content, { subtitleColor = '#d4e4d3', automatedFooter = false } = {}) {
+  const footer = automatedFooter
+    ? `Mensagem automática enviada pelo sistema Libris · ${escapeHtml(schoolName)}.`
+    : `Mensagem enviada pelo sistema Libris · ${escapeHtml(schoolName)}.<br>
+              Por favor, não responda a este e-mail.`
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -24,14 +29,13 @@ function emailFrame(subject, schoolName, subtitle, content) {
           <tr>
             <td style="background-color:#21681f;padding:26px 32px;">
               <div style="font-family:Georgia,'Times New Roman',serif;font-size:26px;font-weight:bold;color:#ffffff;">Biblioteca Escolar</div>
-              <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:#d4e4d3;margin-top:4px;">${escapeHtml(schoolName)}${subtitle}</div>
+              <div style="font-family:Arial,Helvetica,sans-serif;font-size:13px;color:${subtitleColor};margin-top:4px;">${escapeHtml(schoolName)}${subtitle}</div>
             </td>
           </tr>
           ${content}
           <tr>
             <td style="background-color:#f5f8fd;padding:18px 32px;border-top:1px solid #dde3ee;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.5;color:#7a879f;text-align:center;">
-              Mensagem enviada pelo sistema Libris · ${escapeHtml(schoolName)}.<br>
-              Por favor, não responda a este e-mail.
+              ${footer}
             </td>
           </tr>
         </table>
@@ -78,7 +82,7 @@ export function createStudentEmailHtml({ subject, schoolName, message, bookTitle
               Para devolver ou renovar o livro, procure a biblioteca da <strong>${escapeHtml(schoolName)}</strong>. Se você já devolveu, desconsidere esta mensagem.
             </td>
           </tr>`
-  return emailFrame(subject, schoolName, '', content)
+  return emailFrame(subject, schoolName, '', content, { subtitleColor: '#b9c7e3', automatedFooter: true })
 }
 
 export function createCoordinationEmailHtml({ subject, schoolName, message, readerName, bookTitle, dueDate, daysOverdue }) {

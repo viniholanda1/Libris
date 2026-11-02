@@ -88,7 +88,7 @@
           </details>
           <details class="help-item">
             <summary>Posso usar um leitor de código de barras?</summary>
-            <p>Sim. Leitores USB 2D comuns funcionam como teclado, sem configuração no Libris. O campo ID do livro fica pronto ao abrir Empréstimos; a leitura é reconhecida automaticamente ou ao enviar Enter. A câmera também pode ler códigos de barras Code 128 e QR codes antigos, quando disponível.</p>
+            <p>Sim. Leitores USB 2D comuns funcionam como teclado, sem configuração no Libris. O campo ID do livro fica pronto ao abrir Empréstimos; a leitura é reconhecida automaticamente ou ao enviar Enter. Também é possível digitar o código do livro.</p>
           </details>
           <details class="help-item">
             <summary>Como entrar em tela cheia?</summary>
@@ -223,7 +223,6 @@
                         placeholder="Digite ou escaneie (ex.: LI-0002)"
                         autocomplete="off"
                       />
-                      <button type="button" class="btn btn-ghost" id="scanBtn" aria-label="Usar câmera para escanear o código" title="Usar câmera">📷</button>
                     </div>
                   </label>
                   <label>
@@ -449,6 +448,14 @@
 
             <div class="panel chart-panel">
               <div class="panel-head">
+                <h3>Evolução Mensal do Acervo</h3>
+                <button class="chart-info-btn" type="button" data-chart-info-title="Evolução Mensal do Acervo" data-chart-info="Mostra os exemplares cadastrados em cada um dos últimos seis meses, pela data de cadastro do livro." aria-label="Informações sobre Evolução Mensal do Acervo" title="Sobre este gráfico">i</button>
+              </div>
+              <div class="bar-chart" id="monthlyChart"></div>
+            </div>
+
+            <div class="panel chart-panel">
+              <div class="panel-head">
                 <h3>Perfil dos leitores</h3>
                 <button class="chart-info-btn" type="button" data-chart-info-title="Perfil dos leitores" data-chart-info="Mostra a quantidade de leitores cadastrados em cada perfil: alunos, professores e outros." aria-label="Informações sobre Perfil dos leitores" title="Sobre este gráfico">i</button>
               </div>
@@ -485,6 +492,34 @@
         <button class="modal-close" type="button" data-close="bookModal">×</button>
         <div class="book-modal-content" id="bookModalContent"></div>
       </div>
+    </div>
+
+    <div class="modal hidden" id="loanEditModal" aria-hidden="true">
+      <div class="modal-backdrop" data-close="loanEditModal"></div>
+      <section class="modal-card small" role="dialog" aria-modal="true" aria-labelledby="loanEditTitle">
+        <button class="modal-close" type="button" data-close="loanEditModal" aria-label="Fechar">×</button>
+        <h3 id="loanEditTitle">Editar empréstimo</h3>
+        <p class="modal-description">Altere as datas ou a quantidade. A disponibilidade do acervo será atualizada junto com a edição.</p>
+        <form id="loanEditForm" class="form-grid loan-edit-form">
+          <label>
+            <span>Data e hora do empréstimo</span>
+            <input id="loanStartAtInput" type="datetime-local" required />
+          </label>
+          <label>
+            <span>Data e hora do vencimento</span>
+            <input id="loanDueAtInput" type="datetime-local" required />
+          </label>
+          <label>
+            <span>Quantidade de exemplares</span>
+            <input id="loanEditQuantityInput" type="number" min="1" value="1" required />
+            <small id="loanEditQuantityHelp" class="field-help"></small>
+          </label>
+          <div class="loan-edit-actions">
+            <button class="btn btn-secondary" type="button" data-close="loanEditModal">Cancelar</button>
+            <button class="btn btn-primary" id="saveLoanEditBtn" type="submit">Salvar alterações</button>
+          </div>
+        </form>
+      </section>
     </div>
 
     <div class="modal hidden" id="loginModal" aria-hidden="true">
@@ -681,23 +716,6 @@
           <button class="btn btn-secondary" type="button" id="sendEmailBtn">Avisar leitor por e-mail</button>
           <button class="btn btn-secondary" type="button" id="sendCoordinationBtn">Avisar coordenação</button>
         </div>
-      </div>
-    </div>
-
-    <div class="modal hidden" id="qrScannerModal" aria-hidden="true">
-      <div class="modal-backdrop" data-close="qrScannerModal"></div>
-      <div class="modal-card small qr-modal-card" role="dialog" aria-modal="true" aria-labelledby="qrScannerTitle">
-        <button class="modal-close" type="button" data-close="qrScannerModal" aria-label="Fechar leitor de câmera">×</button>
-        <h3 id="qrScannerTitle">Escanear código do livro</h3>
-        <p class="modal-description">Aponte a câmera para o código de barras Code 128 ou para um QR code antigo do livro.</p>
-        <label id="qrCameraDeviceControl" class="qr-camera-select" hidden>
-          <span>Câmera</span>
-          <select id="qrCameraDeviceInput" aria-label="Selecionar câmera"></select>
-        </label>
-        <video id="qrScannerVideo" class="qr-scanner-video" autoplay muted playsinline></video>
-        <p id="qrScannerStatus" class="scanner-status" role="status" aria-live="polite">
-          Solicitando acesso à câmera…
-        </p>
       </div>
     </div>
 
