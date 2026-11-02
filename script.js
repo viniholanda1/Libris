@@ -2049,7 +2049,6 @@ function resetAdminState() {
 
   async function createBookLabelCanvas(book) {
     const canvas = document.createElement('canvas')
-    // Mantemos o tamanho padrão de etiqueta térmica larga/padrão A4
     canvas.width = 1104
     canvas.height = 600
 
@@ -2061,20 +2060,18 @@ function resetAdminState() {
       throw new Error('O código do acervo precisa conter apenas caracteres ASCII para gerar o Code 128.')
     }
 
-    // 1. Gera o Código de Barras via biblioteca
     const { default: JsBarcode } = await import('jsbarcode')
     const barcodeCanvas = document.createElement('canvas')
     JsBarcode(barcodeCanvas, code, {
       format: 'CODE128',
       width: 3,
-      height: 85,
-      displayValue: false, // Nós desenharemos o ID base em destaque manualmente abaixo
-      margin: 8,
+      height: 65,
+      displayValue: false,
+      margin: 4,
       lineColor: '#111111',
       background: '#ffffff'
     })
 
-    // 2. Prepara o fundo do Canvas
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
 
@@ -2082,12 +2079,11 @@ function resetAdminState() {
     const sideMargin = 58
     const contentWidth = canvas.width - sideMargin * 2
 
-    context.font = '700 36px Arial'
+    context.font = '700 38px Arial, sans-serif'
     const badgeWidth = Math.min(420, contentWidth, context.measureText(code).width + 40)
     const badgeX = canvas.width - sideMargin - badgeWidth
     const headerWidth = Math.max(0, badgeX - sideMargin - 24)
 
-    // 3. Cabeçalho LIBRIS e Escola
     context.textAlign = 'left'
     context.fillStyle = '#1e5b3d'
     context.font = '700 32px Georgia, serif'
@@ -2102,7 +2098,6 @@ function resetAdminState() {
       headerWidth
     )
 
-    // Linha divisória do cabeçalho
     context.beginPath()
     context.moveTo(sideMargin, 98)
     context.lineTo(canvas.width - sideMargin, 98)
@@ -2110,62 +2105,80 @@ function resetAdminState() {
     context.lineWidth = 2
     context.stroke()
 
-    // 4. Badge/Crachá de Identificação (ID no Topo Direito)
-    // Calcula a largura do badge baseada no tamanho do código
     context.fillStyle = '#1a241d'
-    context.fillRect(badgeX, 22, badgeWidth, 52)
+    context.fillRect(badgeX, 17, badgeWidth, 56)
 
     context.fillStyle = '#ffffff'
     context.textAlign = 'center'
-    // Alinha o texto exatamente no centro do badge escuro
-    context.fillText(code, badgeX + badgeWidth / 2, 59, badgeWidth - 16)
+    context.font = '700 38px Arial, sans-serif'
+    context.fillText(code, badgeX + badgeWidth / 2, 57, badgeWidth - 20)
 
-    // 5. Corpo da Etiqueta (Hierarquia: Título > Categoria > Autor)
     context.textAlign = 'center'
     context.fillStyle = '#1a241d'
-    context.font = '700 62px Georgia, serif'
-    drawWrappedLabelText(context, book.title || 'Livro sem título', centerX, 160, contentWidth, 60, 2)
+    context.font = '700 68px Georgia, serif'
+    const titleY = 155
+    const titleLineHeight = 72
+    const titleLineCount = drawWrappedLabelText(
+      context,
+      book.title || 'Livro sem título',
+      centerX,
+      titleY,
+      contentWidth,
+      titleLineHeight,
+      2
+    )
 
     context.fillStyle = '#1e5b3d'
-    context.font = '500 29px Arial, sans-serif'
+    context.font = '600 29px Arial, sans-serif'
+    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 42
     context.fillText(
       String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
       centerX,
-      280,
+      categoryY,
       contentWidth
     )
 
-    // Autor em itálico para quebrar monotonia visual
     context.fillStyle = '#4f6256'
-    context.font = 'italic 500 29px Arial, sans-serif'
-    drawWrappedLabelText(context, book.author || 'Autoria não informada', centerX, 325, contentWidth, 34, 2)
+    context.font = 'italic 500 31px Arial, sans-serif'
+    const authorY = categoryY + 58
+    const authorLineHeight = 36
+    const authorLineCount = drawWrappedLabelText(
+      context,
+      book.author || 'Autoria não informada',
+      centerX,
+      authorY,
+      contentWidth,
+      authorLineHeight,
+      2
+    )
 
-    // 6. Dados Físicos (TOMB e ISBN centralizados)
     context.fillStyle = '#24352b'
-    context.font = '700 27px Arial, sans-serif'
+    context.font = '600 21px Arial, sans-serif'
+    const lastAuthorY = authorY + (authorLineCount - 1) * authorLineHeight
+    const tombY = Math.max(390, lastAuthorY + 45)
     context.fillText(
       `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
       centerX,
-      395,
+      tombY,
       contentWidth
     )
 
-    context.font = '500 24px Arial, sans-serif'
-    context.fillText(`ISBN: ${String(book.isbn || '—')}`, centerX, 428, contentWidth)
+    context.font = '500 19px Arial, sans-serif'
+    const isbnY = tombY + 24
+    context.fillText(`ISBN: ${String(book.isbn || '—')}`, centerX, isbnY, contentWidth)
 
-    // 7. Renderiza o Código de Barras (Subiu levemente no eixo Y)
     const barcodeScale = Math.min(1, contentWidth / barcodeCanvas.width)
     const barcodeWidth = barcodeCanvas.width * barcodeScale
     const barcodeHeight = barcodeCanvas.height * barcodeScale
+    const barcodeY = Math.max(438, isbnY + 8)
     context.drawImage(
       barcodeCanvas,
       centerX - barcodeWidth / 2,
-      432,
+      barcodeY,
       barcodeWidth,
       barcodeHeight
     )
 
-    // 8. Código Base GIGANTE para leitura humana rápida
     context.fillStyle = '#000000'
     context.font = '700 52px Arial, sans-serif'
     context.fillText(code, centerX, 582, contentWidth)
