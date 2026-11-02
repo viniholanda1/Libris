@@ -1,4 +1,4 @@
-# Libris 1.2.8
+# Libris 1.2.9
 
 Sistema escolar de biblioteca da CREDE, feito com HTML, CSS e JavaScript. Os dados operacionais ficam no IndexedDB da máquina da biblioteca.
 
@@ -37,6 +37,8 @@ Ao cadastrar um livro, o sistema busca automaticamente capa e descrição pelo t
 
 Os avisos de e-mail são enviados manualmente pelo aplicativo desktop através do servidor SMTP configurado pela CREDE. **Avisar leitor por e-mail** envia ao endereço cadastrado; **Avisar coordenação** envia à coordenação escolar. O envio exige conexão com o servidor de e-mail e aceita portas seguras 465 (TLS) ou 587 (STARTTLS). Não há cota mensal nem envio automático em segundo plano. Os últimos 100 envios de cada escola são registrados localmente.
 
+O limite de empréstimos é contado em exemplares ativos por leitor, somando todos os títulos. Um leitor pode registrar mais de um empréstimo do mesmo título quando houver estoque e ainda tiver limite disponível.
+
 ## Executar localmente
 
 Gere os arquivos publicados e sirva a pasta `dist` por HTTP:
@@ -50,9 +52,9 @@ Abra `http://localhost:8080` no Chromium. Não abra o HTML diretamente pelo gere
 
 ## Aplicativo desktop Tauri
 
-O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.8. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.8/`.
+O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.9. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.9/`.
 
-Para atualizar a branch `main` e gerar o pacote em um único fluxo, execute `./build-debian.sh` no Ubuntu. O script guarda alterações rastreadas e arquivos não rastreados com `git stash`, atualiza a branch com rebase, restaura as alterações, instala as dependências nativas e arquiva o `.deb` em `versoes/1.2.8/`.
+Para atualizar a branch `main` e gerar o pacote em um único fluxo, execute `./build-debian.sh` no Ubuntu. O script guarda alterações rastreadas e arquivos não rastreados com `git stash`, atualiza a branch com rebase, restaura as alterações, instala as dependências nativas e arquiva o `.deb` na pasta da versão informada em `package.json`.
 
 No Ubuntu, o build requer Rust/Cargo e os pacotes `build-essential`, `curl`, `wget`, `file`, `libssl-dev`, `libdbus-1-dev`, `libxdo-dev`, `librsvg2-dev` e `libwebkit2gtk-4.1-dev`. O serviço de credenciais do sistema (Secret Service) deve estar disponível para guardar a senha SMTP. O login CREDE e o envio SMTP devem ser validados no WebView do sistema após a instalação.
 

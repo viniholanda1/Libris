@@ -1,12 +1,12 @@
 {
   "name": "Libris",
-  "version": "1.2.8",
+  "version": "1.2.9",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build:hosting": "node build-hosting.js",
     "build:desktop": "tauri build --bundles deb",
     "tauri": "tauri",
-    "test": "node --test tests/book-scan.test.mjs tests/csv-backup.test.mjs tests/email-templates.test.mjs tests/local-data.test.mjs tests/local-store.test.mjs tests/reader-profiles.test.mjs"
+    "test": "node --test tests/book-scan.test.mjs tests/csv-backup.test.mjs tests/email-templates.test.mjs tests/local-data.test.mjs tests/local-store.test.mjs tests/loan-rules.test.mjs tests/reader-profiles.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.12.4",

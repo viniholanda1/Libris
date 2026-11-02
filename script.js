@@ -12,6 +12,7 @@ import { createLocalDataApi } from './local-data.mjs'
 import { isCompleteBookScan, parseBookScan } from './book-scan.mjs'
 import { isValidIsbn, normalizeIsbn } from './isbn.mjs'
 import { isStudentReader, studentCourseLoans } from './reader-profiles.mjs'
+import { countActiveLoanCopies, getLoanQuantity, getMaximumLoanQuantity } from './loan-rules.mjs'
 import { createCoordinationEmailHtml, createStudentEmailHtml } from './email-templates.mjs'
 import { backupCollectionFiles, optionalBackupCollectionFiles, backupRecordFromRow, parseBackupCell, resolveLegacyCategory } from './csv-backup.mjs'
 import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
@@ -339,8 +340,7 @@ function isTeacherReader(reader) {
 function count(list, key) { const map = new Map(); list.forEach((x) => { const k = key(x); map.set(k, (map.get(k) || 0) + 1) }); return [...map].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value) }
 
 function loanQuantity(loan) {
-  const quantity = Number(loan?.quantity || 1)
-  return Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 1
+  return getLoanQuantity(loan)
 }
 
 function countLoanCopies(loans, key) {
@@ -353,9 +353,7 @@ function countLoanCopies(loans, key) {
 }
 
 function activeLoanCopiesForReader(readerId) {
-  return state.loans
-    .filter((loan) => loan.readerId === readerId && loan.status === 'active')
-    .reduce((total, loan) => total + loanQuantity(loan), 0)
+  return countActiveLoanCopies(state.loans, readerId)
 }
 
 function updateLoanQuantityLimit(reader = null) {
@@ -379,8 +377,16 @@ function updateLoanQuantityLimit(reader = null) {
   checkoutForm?.classList.add('has-loan-quantity')
   const bookCode = $('#bookCodeInput')?.value.trim().toUpperCase()
   const book = state.books.find((item) => item.code?.toUpperCase() === bookCode)
-  const remainingLimit = Math.max(0, getLoanLimitForReader(reader) - activeLoanCopiesForReader(reader.id))
-  const maximum = Math.min(book ? Number(book.available || 0) : remainingLimit, remainingLimit)
+  const activeCopies = activeLoanCopiesForReader(reader.id)
+  const loanLimit = getLoanLimitForReader(reader)
+  const remainingLimit = Math.max(0, loanLimit - activeCopies)
+  const availableCopies = book ? Number(book.available ?? 0) : remainingLimit
+  const maximum = getMaximumLoanQuantity({
+    loanLimit,
+    activeLoans: state.loans,
+    readerId: reader.id,
+    availableCopies
+  })
   input.max = String(maximum)
   input.disabled = maximum < 1
   input.value = String(Math.max(1, Math.min(Number(input.value) || 1, maximum || 1)))
@@ -390,8 +396,8 @@ function updateLoanQuantityLimit(reader = null) {
         ? 'Este livro não tem exemplares disponíveis no momento.'
         : 'O leitor já atingiu o limite de empréstimos configurado.'
       : book
-        ? `Informe de 1 a ${maximum} exemplares, respeitando o estoque e o limite configurado.`
-        : `Limite restante: ${remainingLimit} exemplares. Informe o livro para conferir o estoque.`
+        ? `Disponíveis deste título: ${availableCopies}. Limite do leitor: ${loanLimit}; já possui ${activeCopies} e pode emprestar mais ${remainingLimit}. Máximo neste empréstimo: ${maximum}.`
+        : `Limite do leitor: ${loanLimit}; já possui ${activeCopies} e pode emprestar mais ${remainingLimit}. Informe o livro para conferir o estoque.`
     help.hidden = false
   }
 }
@@ -1138,12 +1144,16 @@ async function submitLoan() {
     0
   )
 
-  if (activeLoansForReader + quantity > loanLimit) {
-    return toast(`O limite para ${reader.role || reader.type || 'este perfil'} é de ${loanLimit} exemplares ativos. Já possui ${activeLoansForReader}; pode emprestar mais ${Math.max(0, loanLimit - activeLoansForReader)}.`, 'error')
-  }
-
-  if (activeLoansSnap.docs.some((loanDoc) => loanDoc.data().bookId === book.id)) {
-    return toast('Este leitor já possui um empréstimo ativo para este mesmo livro!', 'error')
+  const activeLoans = activeLoansSnap.docs.map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() }))
+  const availableCopies = Number(book.available ?? 0)
+  const maximum = getMaximumLoanQuantity({
+    loanLimit,
+    activeLoans,
+    readerId: reader.id,
+    availableCopies
+  })
+  if (quantity > maximum) {
+    return toast(`Máximo permitido agora: ${maximum} exemplar(es). O leitor já possui ${activeLoansForReader} de ${loanLimit} permitido(s), e há ${availableCopies} exemplar(es) disponível(is) deste título.`, 'error')
   }
 
   const maxLoanDays = getMaxLoanDaysForReader(reader)
@@ -2673,17 +2683,24 @@ function openEditLoanModal(loanId) {
   }
 
   const currentQuantity = loanQuantity(loan)
-  const activeCopiesExcludingLoan = Math.max(0, activeLoanCopiesForReader(reader.id) - currentQuantity)
-  const limitCapacity = Math.max(0, getLoanLimitForReader(reader) - activeCopiesExcludingLoan)
-  const stockCapacity = Number(book.available || 0) + currentQuantity
-  const maximum = Math.max(currentQuantity, Math.min(limitCapacity, stockCapacity))
+  const loanLimit = getLoanLimitForReader(reader)
+  const otherActiveCopies = activeLoanCopiesForReader(reader.id) - currentQuantity
+  const availableCopies = Number(book.available ?? 0)
+  const maximum = getMaximumLoanQuantity({
+    loanLimit,
+    activeLoans: state.loans,
+    readerId: reader.id,
+    availableCopies,
+    currentLoanId: loan.id,
+    currentLoanQuantity: currentQuantity
+  })
 
   form.dataset.loanId = loan.id
   $('#loanStartAtInput').value = dateTimeLocalValue(loan.createdAt)
   $('#loanDueAtInput').value = dateTimeLocalValue(loan.dueAt)
   $('#loanEditQuantityInput').value = String(currentQuantity)
   $('#loanEditQuantityInput').max = String(maximum)
-  $('#loanEditQuantityHelp').textContent = `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}, considerando o estoque e o limite do leitor.`
+  $('#loanEditQuantityHelp').textContent = `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}. Limite do leitor: ${loanLimit}; outros empréstimos ativos: ${otherActiveCopies}; disponíveis deste título: ${availableCopies}.`
   modal('loanEditModal', true)
 }
 
