@@ -2064,20 +2064,115 @@ function resetAdminState() {
     const barcodeCanvas = document.createElement('canvas')
     JsBarcode(barcodeCanvas, code, {
       format: 'CODE128',
-      width: 3,
-      height: 65,
+      width: 4,
+      height: 100,
       displayValue: false,
       margin: 4,
       lineColor: '#111111',
       background: '#ffffff'
     })
 
-    context.fillStyle = '#ffffff'
+    context.fillStyle = '#fffdf6'
     context.fillRect(0, 0, canvas.width, canvas.height)
 
     const centerX = canvas.width / 2
     const sideMargin = 58
     const contentWidth = canvas.width - sideMargin * 2
+    context.strokeStyle = '#1e5b3d'
+    context.lineWidth = 4
+    context.strokeRect(12, 12, canvas.width - 24, canvas.height - 24)
+
+    const drawCordelSun = (x, y, scaleX = 1) => {
+      context.save()
+      context.translate(x, y)
+      context.scale(scaleX, 1)
+      context.globalAlpha = 0.9
+      context.lineWidth = 3.5
+      context.lineCap = 'square'
+      context.beginPath()
+      context.arc(20, 20, 8, 0, Math.PI * 2)
+      context.strokeStyle = '#1a241d'
+      context.stroke()
+
+      context.beginPath()
+      context.arc(20, 20, 4, 0, Math.PI * 2)
+      context.strokeStyle = '#1e5b3d'
+      context.stroke()
+
+      context.strokeStyle = '#1a241d'
+      context.lineWidth = 3
+      context.beginPath()
+      ;[
+        [20, 2, 20, 0],
+        [20, 40, 20, 38],
+        [2, 20, 0, 20],
+        [40, 20, 38, 20],
+        [7, 7, 4, 4],
+        [33, 7, 36, 4],
+        [7, 33, 4, 36],
+        [33, 33, 36, 36]
+      ].forEach(([x1, y1, x2, y2]) => {
+        context.moveTo(x1, y1)
+        context.lineTo(x2, y2)
+      })
+      context.stroke()
+      context.restore()
+    }
+
+    const drawMandacaru = (x, y, scaleX = 1) => {
+      context.save()
+      context.translate(x, y)
+      context.scale(scaleX * 1.1, 1.1)
+      context.globalAlpha = 0.92
+      context.lineWidth = 4
+      context.lineCap = 'square'
+      context.lineJoin = 'miter'
+      context.strokeStyle = '#1a241d'
+      context.beginPath()
+      context.moveTo(20, 58)
+      context.lineTo(20, 18)
+      context.lineTo(15, 13)
+      context.lineTo(15, 5)
+      context.moveTo(20, 35)
+      context.lineTo(11, 30)
+      context.lineTo(8, 24)
+      context.lineTo(8, 17)
+      context.moveTo(11, 30)
+      context.lineTo(5, 33)
+      context.lineTo(2, 30)
+      context.moveTo(20, 43)
+      context.lineTo(29, 38)
+      context.lineTo(32, 32)
+      context.lineTo(32, 25)
+      context.moveTo(29, 38)
+      context.lineTo(35, 41)
+      context.lineTo(38, 38)
+      context.moveTo(12, 58)
+      context.lineTo(28, 58)
+      context.stroke()
+
+      context.strokeStyle = '#1e5b3d'
+      context.lineWidth = 2
+      context.beginPath()
+      ;[
+        [18, 22, 15, 19],
+        [22, 28, 25, 25],
+        [17, 39, 14, 36],
+        [23, 48, 26, 45],
+        [9, 24, 6, 22],
+        [33, 33, 36, 30]
+      ].forEach(([x1, y1, x2, y2]) => {
+        context.moveTo(x1, y1)
+        context.lineTo(x2, y2)
+      })
+      context.stroke()
+      context.restore()
+    }
+
+    drawCordelSun(30, 126)
+    drawCordelSun(canvas.width - 30, 126, -1)
+    drawMandacaru(30, 286)
+    drawMandacaru(canvas.width - 30, 286, -1)
 
     context.font = '700 38px Arial, sans-serif'
     const badgeWidth = Math.min(420, contentWidth, context.measureText(code).width + 40)
@@ -2129,8 +2224,8 @@ function resetAdminState() {
     )
 
     context.fillStyle = '#1e5b3d'
-    context.font = '600 29px Arial, sans-serif'
-    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 42
+    context.font = '700 48px Arial, sans-serif'
+    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 52
     context.fillText(
       String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
       centerX,
@@ -2139,9 +2234,9 @@ function resetAdminState() {
     )
 
     context.fillStyle = '#4f6256'
-    context.font = 'italic 500 31px Arial, sans-serif'
-    const authorY = categoryY + 58
-    const authorLineHeight = 36
+    context.font = 'italic 500 46px Arial, sans-serif'
+    const authorY = categoryY + 62
+    const authorLineHeight = 50
     const authorLineCount = drawWrappedLabelText(
       context,
       book.author || 'Autoria não informada',
@@ -2153,24 +2248,36 @@ function resetAdminState() {
     )
 
     context.fillStyle = '#24352b'
-    context.font = '600 21px Arial, sans-serif'
+    context.font = '700 39px Arial, sans-serif'
     const lastAuthorY = authorY + (authorLineCount - 1) * authorLineHeight
-    const tombY = Math.max(390, lastAuthorY + 45)
+    const detailsY = Math.max(328, lastAuthorY + 58)
+    const detailsSideInset = 28
+    context.textAlign = 'left'
     context.fillText(
       `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
-      centerX,
-      tombY,
-      contentWidth
+      sideMargin + detailsSideInset,
+      detailsY,
+      contentWidth / 2 - detailsSideInset
     )
 
-    context.font = '500 19px Arial, sans-serif'
-    const isbnY = tombY + 24
-    context.fillText(`ISBN: ${String(book.isbn || '—')}`, centerX, isbnY, contentWidth)
+    context.font = '500 34px Arial, sans-serif'
+    context.textAlign = 'right'
+    context.fillText(
+      `ISBN: ${String(book.isbn || '—')}`,
+      canvas.width - sideMargin - detailsSideInset,
+      detailsY,
+      contentWidth / 2 - detailsSideInset
+    )
 
-    const barcodeScale = Math.min(1, contentWidth / barcodeCanvas.width)
+    context.textAlign = 'center'
+    const barcodeY = detailsY + 24
+    const barcodeScale = Math.min(
+      2.4,
+      contentWidth / barcodeCanvas.width,
+      Math.max(0, canvas.height - 18 - barcodeY) / barcodeCanvas.height
+    )
     const barcodeWidth = barcodeCanvas.width * barcodeScale
     const barcodeHeight = barcodeCanvas.height * barcodeScale
-    const barcodeY = Math.max(438, isbnY + 8)
     context.drawImage(
       barcodeCanvas,
       centerX - barcodeWidth / 2,
@@ -2178,10 +2285,6 @@ function resetAdminState() {
       barcodeWidth,
       barcodeHeight
     )
-
-    context.fillStyle = '#000000'
-    context.font = '700 52px Arial, sans-serif'
-    context.fillText(code, centerX, 582, contentWidth)
 
     return canvas
   }
