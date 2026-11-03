@@ -44,5 +44,5 @@ export function getMaximumLoanQuantity({
   const limitCapacity = Math.max(0, limit - otherActiveCopies)
   const stockCapacity = available + currentQuantity
 
-  return Math.max(currentQuantity, Math.min(limitCapacity, stockCapacity))
+  return Math.min(limitCapacity, stockCapacity)
 }

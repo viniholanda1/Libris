@@ -2714,7 +2714,9 @@ function openEditLoanModal(loanId) {
   $('#loanDueAtInput').value = dateTimeLocalValue(getLoanDueDate(loan))
   $('#loanEditQuantityInput').value = String(currentQuantity)
   $('#loanEditQuantityInput').max = String(maximum)
-  $('#loanEditQuantityHelp').textContent = `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}. Limite do leitor: ${loanLimit}; outros empréstimos ativos: ${otherActiveCopies}; disponíveis deste título: ${availableCopies}.`
+  $('#loanEditQuantityHelp').textContent = currentQuantity > maximum
+    ? `A quantidade atual (${currentQuantity}) excede o máximo seguro (${maximum}). Reduza a quantidade ou regularize outros empréstimos do leitor.`
+    : `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}. Limite do leitor: ${loanLimit}; outros empréstimos ativos: ${otherActiveCopies}; disponíveis deste título: ${availableCopies}.`
   modal('loanEditModal', true)
 }
 

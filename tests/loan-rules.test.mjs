@@ -77,9 +77,9 @@ test('allows increasing an existing loan while preserving its current copies', (
   }), 2)
 })
 
-test('preserves an existing loan if the reader is already at the limit', () => {
+test('caps an edited loan at the remaining reader limit even when its current quantity is higher', () => {
   const activeLoans = [
-    { id: 'current-loan', readerId, status: 'active', quantity: 1 },
+    { id: 'current-loan', readerId, status: 'active', quantity: 2 },
     { id: 'other-loan', readerId, status: 'active', quantity: 1 }
   ]
 
@@ -89,8 +89,32 @@ test('preserves an existing loan if the reader is already at the limit', () => {
     readerId,
     availableCopies: 24,
     currentLoanId: 'current-loan',
-    currentLoanQuantity: 1
+    currentLoanQuantity: 2
   }), 1)
+})
+
+test('caps an edited loan by remaining physical stock after accounting for copies already on that loan', () => {
+  const activeLoans = [
+    { id: 'current-loan', readerId, status: 'active', quantity: 2 }
+  ]
+
+  assert.equal(getMaximumLoanQuantity({
+    loanLimit: 10,
+    activeLoans,
+    readerId,
+    availableCopies: 0,
+    currentLoanId: 'current-loan',
+    currentLoanQuantity: 2
+  }), 2)
+
+  assert.equal(getMaximumLoanQuantity({
+    loanLimit: 10,
+    activeLoans,
+    readerId,
+    availableCopies: 0,
+    currentLoanId: 'current-loan',
+    currentLoanQuantity: 3
+  }), 3)
 })
 
 test('only counts active copies for the requested reader and normalizes legacy quantities', () => {
