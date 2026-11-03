@@ -1,4 +1,4 @@
-# Libris 1.2.9
+# Libris 1.2.10
 
 Sistema escolar de biblioteca da CREDE, feito com HTML, CSS e JavaScript. Os dados operacionais ficam no IndexedDB da máquina da biblioteca.
 
@@ -39,6 +39,8 @@ Os avisos de e-mail são enviados manualmente pelo aplicativo desktop através d
 
 O limite de empréstimos é contado em exemplares ativos por leitor, somando todos os títulos. Um leitor pode registrar mais de um empréstimo do mesmo título quando houver estoque e ainda tiver limite disponível.
 
+A quantidade do empréstimo pode ser ajustada respeitando estoque e limite do leitor. A data de saída (`createdAt`) é preservada; renovações acrescentam dias ao vencimento (`dueDate`). Empréstimos antigos que ainda usam `dueAt` continuam compatíveis.
+
 ## Executar localmente
 
 Gere os arquivos publicados e sirva a pasta `dist` por HTTP:
@@ -52,7 +54,7 @@ Abra `http://localhost:8080` no Chromium. Não abra o HTML diretamente pelo gere
 
 ## Aplicativo desktop Tauri
 
-O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.9. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.9/`.
+O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.10. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.10/`.
 
 Para atualizar a branch `main` e gerar o pacote em um único fluxo, execute `./build-debian.sh` no Ubuntu. O script guarda alterações rastreadas e arquivos não rastreados com `git stash`, atualiza a branch com rebase, restaura as alterações, instala as dependências nativas e arquiva o `.deb` na pasta da versão informada em `package.json`.
 

@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { countActiveLoanCopies, getLoanQuantity, getMaximumLoanQuantity } from '../loan-rules.mjs'
+import {
+  countActiveLoanCopies,
+  extendLoanDueDate,
+  getLoanDueDate,
+  getLoanQuantity,
+  getMaximumLoanQuantity
+} from '../loan-rules.mjs'
 
 const readerId = 'student-1'
 
@@ -98,4 +104,24 @@ test('only counts active copies for the requested reader and normalizes legacy q
   assert.equal(countActiveLoanCopies(loans, readerId), 3)
   assert.equal(countActiveLoanCopies(loans, readerId, 'active'), 1)
   assert.equal(getLoanQuantity({ quantity: 0 }), 1)
+})
+
+test('renews from the current due date without changing the original checkout date', () => {
+  const createdAt = new Date('2026-10-01T10:00:00')
+  const dueDate = new Date('2026-10-08T10:00:00')
+  const loan = { createdAt, dueDate }
+
+  const renewedDueDate = extendLoanDueDate(loan, 7)
+
+  assert.equal(renewedDueDate.toISOString(), '2026-10-15T10:00:00.000Z')
+  assert.equal(loan.createdAt, createdAt)
+  assert.equal(getLoanDueDate(loan), dueDate)
+})
+
+test('uses legacy dueAt values when dueDate is not present', () => {
+  const legacyDueDate = new Date('2026-10-08T10:00:00')
+  const loan = { dueAt: legacyDueDate }
+
+  assert.equal(getLoanDueDate(loan), legacyDueDate)
+  assert.equal(extendLoanDueDate(loan, 7).toISOString(), '2026-10-15T10:00:00.000Z')
 })

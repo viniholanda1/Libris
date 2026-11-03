@@ -12,7 +12,7 @@ import { createLocalDataApi } from './local-data.mjs'
 import { isCompleteBookScan, parseBookScan } from './book-scan.mjs'
 import { isValidIsbn, normalizeIsbn } from './isbn.mjs'
 import { isStudentReader, studentCourseLoans } from './reader-profiles.mjs'
-import { countActiveLoanCopies, getLoanQuantity, getMaximumLoanQuantity } from './loan-rules.mjs'
+import { countActiveLoanCopies, extendLoanDueDate, getLoanDueDate, getLoanQuantity, getMaximumLoanQuantity } from './loan-rules.mjs'
 import { createCoordinationEmailHtml, createStudentEmailHtml } from './email-templates.mjs'
 import { backupCollectionFiles, optionalBackupCollectionFiles, backupRecordFromRow, parseBackupCell, resolveLegacyCategory } from './csv-backup.mjs'
 import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
@@ -150,7 +150,7 @@ function dateTimeLocalValue(value) {
   return new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000).toISOString().slice(0, 16)
 }
 const overdue = (l) => {
-  const dueDate = date(l.dueAt)
+  const dueDate = date(getLoanDueDate(l))
   return l.status === 'active' && dueDate instanceof Date && !Number.isNaN(dueDate.getTime()) && dueDate < new Date()
 }
 
@@ -358,34 +358,41 @@ function activeLoanCopiesForReader(readerId) {
 
 function updateLoanQuantityLimit(reader = null) {
   const field = $('#loanQuantityField')
-  const input = $('#loanQuantity')
+  const input = $('#loanQuantityInput')
   const help = $('#loanQuantityHelp')
-  const checkoutForm = field?.closest('.checkout-form')
   if (!field || !input) return
 
+  field.hidden = false
+  const bookCode = $('#bookCodeInput')?.value.trim().toUpperCase()
+  const book = state.books.find((item) => item.code?.toUpperCase() === bookCode)
+  const availableCopies = book ? Number(book.available ?? 0) : null
   if (!reader) {
-    field.hidden = true
-    checkoutForm?.classList.remove('has-loan-quantity')
-    input.value = '1'
-    input.removeAttribute('max')
-    input.disabled = false
-    if (help) help.hidden = true
+    if (availableCopies === null) input.removeAttribute('max')
+    else input.max = String(availableCopies)
+    input.disabled = availableCopies === 0
+    if (availableCopies !== null) {
+      input.value = String(Math.max(1, Math.min(Number(input.value) || 1, availableCopies || 1)))
+    }
+    if (help) {
+      help.textContent = book
+        ? availableCopies > 0
+          ? `Disponíveis deste título: ${availableCopies}. Selecione o leitor para conferir o limite.`
+          : 'Este livro não tem exemplares disponíveis no momento.'
+        : 'Informe o livro e selecione o leitor para calcular a quantidade permitida.'
+      help.hidden = false
+    }
     return
   }
 
-  field.hidden = false
-  checkoutForm?.classList.add('has-loan-quantity')
-  const bookCode = $('#bookCodeInput')?.value.trim().toUpperCase()
-  const book = state.books.find((item) => item.code?.toUpperCase() === bookCode)
   const activeCopies = activeLoanCopiesForReader(reader.id)
   const loanLimit = getLoanLimitForReader(reader)
   const remainingLimit = Math.max(0, loanLimit - activeCopies)
-  const availableCopies = book ? Number(book.available ?? 0) : remainingLimit
+  const copiesForLimit = availableCopies ?? remainingLimit
   const maximum = getMaximumLoanQuantity({
     loanLimit,
     activeLoans: state.loans,
     readerId: reader.id,
-    availableCopies
+    availableCopies: copiesForLimit
   })
   input.max = String(maximum)
   input.disabled = maximum < 1
@@ -1119,7 +1126,7 @@ async function submitLoan() {
     return toast(!book ? 'Livro não encontrado.' : 'Leitor não encontrado.', 'error')
   }
 
-  const quantity = Number($('#loanQuantity')?.value || 1)
+  const quantity = Number($('#loanQuantityInput')?.value || 1)
   const loanLimit = getLoanLimitForReader(reader)
 
   if (!Number.isSafeInteger(quantity) || quantity < 1) {
@@ -1200,6 +1207,7 @@ async function submitLoan() {
         readerEmail: reader.email || '',
         quantity,
         days: effectiveDays,
+        dueDate: Timestamp.fromDate(due),
         dueAt: Timestamp.fromDate(due),
         status: 'active',
         notices: {},
@@ -1212,6 +1220,7 @@ async function submitLoan() {
     if ($('#bookCodeInput')) $('#bookCodeInput').value = ''
     if ($('#readerInput')) $('#readerInput').value = ''
     if ($('#loanReaderIdInput')) $('#loanReaderIdInput').value = ''
+    if ($('#loanQuantityInput')) $('#loanQuantityInput').value = '1'
     updateLoanQuantityLimit(null)
     updateLoanDaysLimit(null, true)
     if ($('#readerSuggestions')) $('#readerSuggestions').hidden = true
@@ -1266,10 +1275,15 @@ async function renewLoan(id) {
     return
   }
   try {
-    const due = date(loan.dueAt) ? new Date(date(loan.dueAt)) : new Date()
-    due.setDate(due.getDate() + days)
-    if (Number.isNaN(due.getTime())) throw new Error('prazo inválido')
-    await updateDoc(doc(db, 'loans', id), { days, dueAt: Timestamp.fromDate(due), notices: {}, schoolId: config.currentSchoolId, updatedAt: serverTimestamp() })
+    const due = extendLoanDueDate(loan, days)
+    await updateDoc(doc(db, 'loans', id), {
+      days,
+      dueDate: Timestamp.fromDate(due),
+      dueAt: Timestamp.fromDate(due),
+      notices: {},
+      schoolId: config.currentSchoolId,
+      updatedAt: serverTimestamp()
+    })
     await logAudit('loan_renewed', { loanId: id, days }, state.user?.uid || null)
     toast(`Renovação concluída por ${days} dias.`)
   } catch (err) { error(err, 'Não foi possível renovar o empréstimo.') }
@@ -1446,8 +1460,8 @@ async function triggerNotification(type) {
     }
 
     const subject = `Empréstimo em atraso - ${config.schoolName}`
-    const coordinationMessage = `Olá, coordenação. O empréstimo de ${loanQuantity(loan)} exemplar(es) do livro "${loan.bookTitle}" para o(a) leitor(a) ${loan.readerName} está em atraso desde ${formatDate(loan.dueAt)}.`
-    const dueDate = date(loan.dueAt)
+    const coordinationMessage = `Olá, coordenação. O empréstimo de ${loanQuantity(loan)} exemplar(es) do livro "${loan.bookTitle}" para o(a) leitor(a) ${loan.readerName} está em atraso desde ${formatDate(getLoanDueDate(loan))}.`
+    const dueDate = date(getLoanDueDate(loan))
     const daysOverdue = dueDate && !Number.isNaN(dueDate.getTime())
       ? Math.max(0, Math.ceil((Date.now() - dueDate.getTime()) / 86400000))
       : 0
@@ -1457,7 +1471,7 @@ async function triggerNotification(type) {
       message: coordinationMessage,
       readerName: loan.readerName,
       bookTitle: loan.bookTitle,
-      dueDate: formatDate(loan.dueAt),
+      dueDate: formatDate(getLoanDueDate(loan)),
       daysOverdue
     })
     const result = await sendEmailFromButton($('#sendCoordinationBtn'), coordination.email, subject, coordinationMessage, htmlBody)
@@ -1487,7 +1501,7 @@ async function triggerNotification(type) {
     schoolName: config.schoolName,
     message,
     bookTitle: loan.bookTitle,
-    dueDate: formatDate(loan.dueAt),
+    dueDate: formatDate(getLoanDueDate(loan)),
     loanDays: Number(loan.days || 7)
   })
   const result = await sendEmailFromButton($('#sendEmailBtn'), reader.email, subject, message, htmlBody)
@@ -2221,8 +2235,8 @@ function resetAdminState() {
     context.textAlign = 'center'
     context.fillStyle = '#1a241d'
     context.font = '700 68px Georgia, serif'
-    const titleY = 155
-    const titleLineHeight = 72
+    const titleY = 135
+    const titleLineHeight = 64
     const titleLineCount = drawWrappedLabelText(
       context,
       book.title || 'Livro sem título',
@@ -2235,7 +2249,7 @@ function resetAdminState() {
 
     context.fillStyle = '#1e5b3d'
     context.font = '700 48px Arial, sans-serif'
-    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 52
+    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 44
     context.fillText(
       String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
       centerX,
@@ -2245,8 +2259,8 @@ function resetAdminState() {
 
     context.fillStyle = '#4f6256'
     context.font = 'italic 500 46px Arial, sans-serif'
-    const authorY = categoryY + 62
-    const authorLineHeight = 50
+    const authorY = categoryY + 54
+    const authorLineHeight = 44
     const authorLineCount = drawWrappedLabelText(
       context,
       book.author || 'Autoria não informada',
@@ -2260,16 +2274,8 @@ function resetAdminState() {
     context.fillStyle = '#24352b'
     context.font = '700 39px Arial, sans-serif'
     const lastAuthorY = authorY + (authorLineCount - 1) * authorLineHeight
-    const detailsY = Math.max(328, lastAuthorY + 58)
+    const detailsY = Math.max(300, lastAuthorY + 42)
     const detailsSideInset = 28
-    context.textAlign = 'left'
-    context.fillText(
-      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
-      sideMargin + detailsSideInset,
-      detailsY,
-      contentWidth / 2 - detailsSideInset
-    )
-
     context.font = '500 34px Arial, sans-serif'
     context.textAlign = 'right'
     context.fillText(
@@ -2280,11 +2286,11 @@ function resetAdminState() {
     )
 
     context.textAlign = 'center'
-    const barcodeY = detailsY + 24
+    const barcodeY = detailsY + 18
     const barcodeScale = Math.min(
-      2.4,
+      1.65,
       contentWidth / barcodeCanvas.width,
-      Math.max(0, canvas.height - 18 - barcodeY) / barcodeCanvas.height
+      Math.max(0, canvas.height - 78 - barcodeY) / barcodeCanvas.height
     )
     const barcodeWidth = barcodeCanvas.width * barcodeScale
     const barcodeHeight = barcodeCanvas.height * barcodeScale
@@ -2294,6 +2300,16 @@ function resetAdminState() {
       barcodeY,
       barcodeWidth,
       barcodeHeight
+    )
+
+    context.fillStyle = '#24352b'
+    context.font = '700 32px Arial, sans-serif'
+    context.textAlign = 'center'
+    context.fillText(
+      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
+      centerX,
+      Math.min(canvas.height - 28, barcodeY + barcodeHeight + 34),
+      contentWidth
     )
 
     return canvas
@@ -2636,7 +2652,7 @@ function renderLoans() {
     ]
     return !queryText || searchFields.some((value) => String(value || '').toLocaleLowerCase('pt-BR').includes(queryText))
   }).sort((left, right) => {
-    const daysLate = (loan) => overdue(loan) ? Math.ceil((Date.now() - date(loan.dueAt).getTime()) / 86400000) : 0
+    const daysLate = (loan) => overdue(loan) ? Math.ceil((Date.now() - date(getLoanDueDate(loan)).getTime()) / 86400000) : 0
     const studentPriority = (loan) => {
       const reader = state.readers.find((item) => item.id === loan.readerId)
       return isStudentReader(reader) && overdue(loan) ? 1 : 0
@@ -2652,7 +2668,7 @@ function renderLoans() {
     const maximumAttribute = maximum === null ? '' : `max="${maximum}"`
     const renewalLabel = maximum === null ? 'Dias para renovar' : `Dias para renovar (máximo ${maximum})`
     const copyCount = loanQuantity(l)
-    return `<tr><td><strong>${esc(l.bookTitle)}</strong><div class="loan-book-details"><small>${esc(l.bookCode)}</small><small>Empréstimo: ${formatDate(l.createdAt)}</small><small>Quantidade: ${copyCount} ${copyCount === 1 ? 'exemplar' : 'exemplares'}</small></div></td><td>${esc(l.readerName)}</td><td><div>Vencimento: ${formatDate(l.dueAt)}</div><small>Prazo: ${selectedDays} dias</small></td><td><span class="badge ${overdue(l) ? 'borrowed' : 'available'}">${overdue(l) ? 'Em atraso' : 'Em dia'}</span></td><td><div class="action-row"><input class="renew-days" type="number" min="1" ${maximumAttribute} value="${renewalDays}" data-renew-days="${esc(l.id)}" aria-label="${renewalLabel}"><button class="small-btn primary" data-return="${esc(l.id)}" type="button">Devolver</button><button class="small-btn warning" data-renew="${esc(l.id)}" type="button">Renovar</button><button class="small-btn danger" data-notify="${esc(l.id)}" type="button">Notificar</button><button class="small-btn secondary" data-edit-loan="${esc(l.id)}" type="button">Editar</button></div></td></tr>`
+    return `<tr><td><strong>${esc(l.bookTitle)}</strong><div class="loan-book-details"><small>${esc(l.bookCode)}</small><small>Quantidade: ${copyCount} ${copyCount === 1 ? 'exemplar' : 'exemplares'}</small></div></td><td>${esc(l.readerName)}</td><td><div class="loan-dates"><span>Empréstimo: ${formatDate(l.createdAt)}</span><span>Vencimento: ${formatDate(getLoanDueDate(l))}</span></div><small>Prazo: ${selectedDays} dias</small></td><td><span class="badge ${overdue(l) ? 'borrowed' : 'available'}">${overdue(l) ? 'Em atraso' : 'Em dia'}</span></td><td><div class="action-row"><input class="renew-days" type="number" min="1" ${maximumAttribute} value="${renewalDays}" data-renew-days="${esc(l.id)}" aria-label="${renewalLabel}"><button class="small-btn primary" data-return="${esc(l.id)}" type="button">Devolver</button><button class="small-btn warning" data-renew="${esc(l.id)}" type="button">Renovar</button><button class="small-btn danger" data-notify="${esc(l.id)}" type="button">Notificar</button><button class="small-btn secondary" data-edit-loan="${esc(l.id)}" type="button">Editar</button></div></td></tr>`
   }).join('') : '<tr><td colspan="5" class="text-center">Nenhum empréstimo corresponde à busca e aos filtros.</td></tr>'
 
   $$('[data-edit-loan]').forEach((button) => {
@@ -2684,7 +2700,7 @@ function openEditLoanModal(loanId) {
 
   const currentQuantity = loanQuantity(loan)
   const loanLimit = getLoanLimitForReader(reader)
-  const otherActiveCopies = activeLoanCopiesForReader(reader.id) - currentQuantity
+  const otherActiveCopies = Math.max(0, activeLoanCopiesForReader(reader.id) - currentQuantity)
   const availableCopies = Number(book.available ?? 0)
   const maximum = getMaximumLoanQuantity({
     loanLimit,
@@ -2697,7 +2713,7 @@ function openEditLoanModal(loanId) {
 
   form.dataset.loanId = loan.id
   $('#loanStartAtInput').value = dateTimeLocalValue(loan.createdAt)
-  $('#loanDueAtInput').value = dateTimeLocalValue(loan.dueAt)
+  $('#loanDueAtInput').value = dateTimeLocalValue(getLoanDueDate(loan))
   $('#loanEditQuantityInput').value = String(currentQuantity)
   $('#loanEditQuantityInput').max = String(maximum)
   $('#loanEditQuantityHelp').textContent = `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}. Limite do leitor: ${loanLimit}; outros empréstimos ativos: ${otherActiveCopies}; disponíveis deste título: ${availableCopies}.`
@@ -2715,7 +2731,7 @@ async function saveEditedLoan(event) {
   const loanId = form?.dataset.loanId
   const loan = state.loans.find((item) => item.id === loanId && item.status === 'active')
   const reader = state.readers.find((item) => item.id === loan?.readerId)
-  const startAt = new Date($('#loanStartAtInput')?.value || '')
+  const startAt = loan ? date(loan.createdAt) : null
   const dueAt = new Date($('#loanDueAtInput')?.value || '')
   const quantity = Number($('#loanEditQuantityInput')?.value)
   if (!loan || !reader) {
@@ -2724,6 +2740,7 @@ async function saveEditedLoan(event) {
     return
   }
   if (
+    !(startAt instanceof Date) ||
     Number.isNaN(startAt.getTime()) ||
     Number.isNaN(dueAt.getTime()) ||
     dueAt <= startAt ||
@@ -2742,14 +2759,23 @@ async function saveEditedLoan(event) {
       where('readerId', '==', reader.id),
       where('status', '==', 'active')
     ))
-    const otherActiveCopies = activeLoansSnap.docs
-      .filter((loanDoc) => loanDoc.id !== loanId)
-      .reduce((total, loanDoc) => total + loanQuantity(loanDoc.data()), 0)
     const loanLimit = getLoanLimitForReader(reader)
-    const maximumByLimit = loanLimit - otherActiveCopies
-    const currentQuantity = loanQuantity(loan)
-    if (quantity > currentQuantity && quantity > maximumByLimit) {
-      return toast(`O limite para ${reader.role || reader.type || 'este perfil'} é de ${loanLimit} exemplares ativos.`, 'error')
+    const activeLoans = activeLoansSnap.docs.map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() }))
+    const currentLoan = activeLoans.find((item) => item.id === loanId)
+    const book = state.books.find((item) => item.id === loan.bookId)
+    if (!currentLoan || !book) {
+      return toast('Não foi possível validar o estoque e os empréstimos ativos.', 'error')
+    }
+    const quantityMaximum = getMaximumLoanQuantity({
+      loanLimit,
+      activeLoans,
+      readerId: reader.id,
+      availableCopies: Number(book.available ?? 0),
+      currentLoanId: loanId,
+      currentLoanQuantity: loanQuantity(currentLoan)
+    })
+    if (quantity > quantityMaximum) {
+      return toast(`Máximo permitido: ${quantityMaximum} exemplar(es), considerando o limite do leitor e o estoque disponível.`, 'error')
     }
 
     const startDay = Date.UTC(startAt.getFullYear(), startAt.getMonth(), startAt.getDate())
@@ -2786,7 +2812,7 @@ async function saveEditedLoan(event) {
       }
 
       tx.update(loanRef, {
-        createdAt: Timestamp.fromDate(startAt),
+        dueDate: Timestamp.fromDate(dueAt),
         dueAt: Timestamp.fromDate(dueAt),
         days,
         quantity,
@@ -2796,7 +2822,7 @@ async function saveEditedLoan(event) {
       })
     })
 
-    await logAudit('loan_updated', { loanId, startAt, dueAt, quantity }, state.user?.uid || null)
+    await logAudit('loan_updated', { loanId, dueAt, quantity }, state.user?.uid || null)
     modal('loanEditModal', false)
     toast('Empréstimo atualizado.')
   } catch (err) {
@@ -2824,7 +2850,7 @@ async function notify(id) {
     const emailTarget = reader?.email || loan.readerEmail || 'E-mail não informado'
     $('#notificationContact').textContent = `${emailTarget} · ${reader?.phone || 'Telefone não informado'}`
   }
-  if ($('#notificationMessage')) $('#notificationMessage').value = `Olá, ${loan.readerName}. O empréstimo de ${loanQuantity(loan)} exemplar(es) do livro "${loan.bookTitle}" vence em ${formatDate(loan.dueAt)}. Por favor, procure a biblioteca escolar.`
+  if ($('#notificationMessage')) $('#notificationMessage').value = `Olá, ${loan.readerName}. O empréstimo de ${loanQuantity(loan)} exemplar(es) do livro "${loan.bookTitle}" vence em ${formatDate(getLoanDueDate(loan))}. Por favor, procure a biblioteca escolar.`
   const modalEl = $('#notificationModal')
   if (modalEl) modalEl.dataset.loanId = String(id)
   modal('notificationModal', true)

@@ -252,9 +252,8 @@ label { display:block; font-size:0.9rem; color:var(--muted); }
   padding:0;
   font-size:1.25rem;
 }
-.checkout-form #registerLoanBtn { display:block; margin:1rem 0 0 auto; }
-.checkout-form .form-grid { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(8rem, 0.7fr); }
-.checkout-form.has-loan-quantity .form-grid { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(8rem, 0.7fr) minmax(8rem, 0.7fr); }
+.checkout-form #registerLoanBtn { display:block; box-sizing:border-box; min-height:42px; margin:1rem 0 0 auto; }
+.checkout-form .form-grid { grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(8rem, 0.7fr) minmax(8rem, 0.7fr); }
 .checkout-form .form-grid > label { min-width:0; }
 .checkout-form .input-row { width:100%; }
 .checkout-form .input-row input { flex:1 1 100%; width:100%; min-width:0; }
@@ -357,6 +356,7 @@ tr:last-child td { border-bottom: none; }
 .loan-edit-actions { display:flex; justify-content:flex-end; gap:0.5rem; grid-column:1 / -1; margin-top:0.25rem; }
 .loan-book-details { display:grid; gap:0.12rem; margin-top:0.2rem; }
 .loan-book-details small { color:var(--muted); font-size:0.78rem; }
+.loan-dates { display:grid; gap:0.15rem; }
 .label-modal { width:min(96vw,1080px); padding:1.5rem; }
 .label-modal-heading { display:flex; align-items:center; gap:0.85rem; margin-bottom:1.2rem; }
 .label-modal-heading h3 { margin:0; }
@@ -440,7 +440,6 @@ tr:last-child td { border-bottom: none; }
   .tab-buttons { gap:0.35rem; }
   .tab-buttons .tab-btn { flex:1; padding-inline:0.55rem; }
   .checkout-form .form-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
-  .checkout-form.has-loan-quantity .form-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .checkout-form .form-grid > label:last-child { grid-column:1 / -1; }
 }
 
@@ -641,9 +640,6 @@ tr:last-child td { border-bottom: none; }
   .kpi-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   .dashboard-grid { grid-template-columns:repeat(4, minmax(0, 1fr)); }
   .checkout-form .form-grid {
-    grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(9rem, 0.7fr);
-  }
-  .checkout-form.has-loan-quantity .form-grid {
     grid-template-columns:minmax(0, 1.1fr) minmax(0, 1.2fr) minmax(9rem, 0.7fr) minmax(9rem, 0.7fr);
   }
   .loans-toolbar { align-items:flex-end; }
@@ -669,7 +665,6 @@ tr:last-child td { border-bottom: none; }
   .kpi-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:0.75rem; }
   .dashboard-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .checkout-form .form-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
-  .checkout-form.has-loan-quantity .form-grid { grid-template-columns:repeat(2, minmax(0, 1fr)); }
   .checkout-form .form-grid > label:last-child { grid-column:1 / -1; }
   .loans-toolbar { align-items:stretch; flex-direction:column; }
   .loan-filters { display:grid; grid-template-columns:minmax(0, 1fr) minmax(12rem, 0.45fr); justify-content:stretch; }
@@ -704,7 +699,6 @@ tr:last-child td { border-bottom: none; }
   .dashboard-grid { grid-template-columns:1fr; gap:0.65rem; }
   .chart-panel { min-height:0; }
   .checkout-form .form-grid { grid-template-columns:minmax(0, 1fr); }
-  .checkout-form.has-loan-quantity .form-grid { grid-template-columns:minmax(0, 1fr); }
   .checkout-form .form-grid > label:last-child { grid-column:auto; }
   .checkout-form #registerLoanBtn { width:100%; margin-top:0.75rem; }
   .loan-filters { grid-template-columns:minmax(0, 1fr); }

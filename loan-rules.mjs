@@ -3,6 +3,22 @@ export function getLoanQuantity(loan) {
   return Number.isSafeInteger(quantity) && quantity > 0 ? quantity : 1
 }
 
+export function getLoanDueDate(loan) {
+  return loan?.dueDate ?? loan?.dueAt
+}
+
+export function extendLoanDueDate(loan, days, fallbackDate = new Date()) {
+  if (!Number.isSafeInteger(days) || days < 1) {
+    throw new Error('O prazo de renovação deve ser um número inteiro maior que zero.')
+  }
+
+  const value = getLoanDueDate(loan)
+  const dueDate = value?.toDate ? value.toDate() : value ? new Date(value) : new Date(fallbackDate)
+  if (Number.isNaN(dueDate.getTime())) throw new Error('A data de vencimento do empréstimo é inválida.')
+  dueDate.setDate(dueDate.getDate() + days)
+  return dueDate
+}
+
 export function countActiveLoanCopies(loans, readerId, excludedLoanId = null) {
   return loans
     .filter((loan) => loan.status === 'active' && loan.readerId === readerId && loan.id !== excludedLoanId)

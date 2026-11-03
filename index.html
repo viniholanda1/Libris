@@ -62,7 +62,7 @@
         <section class="modal-card small" role="dialog" aria-modal="true" aria-labelledby="aboutModalTitle">
           <button class="modal-close" type="button" data-close="aboutModal" aria-label="Fechar">×</button>
           <h3 id="aboutModalTitle">Sobre o Libris</h3>
-          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.9.</p>
+          <p class="modal-description">Sistema de gestão para bibliotecas escolares, versão 1.2.10.</p>
           <dl class="about-details">
             <div><dt>Desenvolvimento</dt><dd>Vinicius e Alyssa</dd></div>
             <div><dt>Tecnologias</dt><dd>HTML, CSS, JavaScript e Rust (Tauri)</dd></div>
@@ -233,9 +233,9 @@
                       <div id="readerSuggestions" class="reader-suggestions" role="listbox" hidden></div>
                     </div>
                   </label>
-                  <label id="loanQuantityField" hidden>
+                  <label id="loanQuantityField">
                     <span>Quantidade de exemplares</span>
-                    <input id="loanQuantity" type="number" min="1" value="1" aria-describedby="loanQuantityHelp" required />
+                    <input id="loanQuantityInput" type="number" min="1" value="1" aria-describedby="loanQuantityHelp" required />
                     <small id="loanQuantityHelp" class="field-help" hidden></small>
                   </label>
                   <label>
@@ -415,6 +415,14 @@
 
             <div class="panel chart-panel">
               <div class="panel-head">
+                <h3>Evolução Mensal do Acervo</h3>
+                <button class="chart-info-btn" type="button" data-chart-info-title="Evolução Mensal do Acervo" data-chart-info="Mostra os exemplares cadastrados em cada um dos últimos seis meses, pela data de cadastro do livro." aria-label="Informações sobre Evolução Mensal do Acervo" title="Sobre este gráfico">i</button>
+              </div>
+              <div class="bar-chart" id="monthlyChart"></div>
+            </div>
+
+            <div class="panel chart-panel">
+              <div class="panel-head">
                 <h3>Status do Acervo</h3>
                 <button class="chart-info-btn" type="button" data-chart-info-title="Status do Acervo" data-chart-info="Compara a quantidade de exemplares disponíveis com a quantidade emprestada." aria-label="Informações sobre Status do Acervo" title="Sobre este gráfico">i</button>
               </div>
@@ -444,14 +452,6 @@
                 <button class="chart-info-btn" type="button" data-chart-info-title="Empréstimos por mês" data-chart-info="Conta os empréstimos registrados em cada mês do ano atual, pela data de criação do empréstimo." aria-label="Informações sobre Empréstimos por mês" title="Sobre este gráfico">i</button>
               </div>
               <div class="bar-chart" id="monthlyLoanChart"></div>
-            </div>
-
-            <div class="panel chart-panel">
-              <div class="panel-head">
-                <h3>Evolução Mensal do Acervo</h3>
-                <button class="chart-info-btn" type="button" data-chart-info-title="Evolução Mensal do Acervo" data-chart-info="Mostra os exemplares cadastrados em cada um dos últimos seis meses, pela data de cadastro do livro." aria-label="Informações sobre Evolução Mensal do Acervo" title="Sobre este gráfico">i</button>
-              </div>
-              <div class="bar-chart" id="monthlyChart"></div>
             </div>
 
             <div class="panel chart-panel">
@@ -499,11 +499,11 @@
       <section class="modal-card small" role="dialog" aria-modal="true" aria-labelledby="loanEditTitle">
         <button class="modal-close" type="button" data-close="loanEditModal" aria-label="Fechar">×</button>
         <h3 id="loanEditTitle">Editar empréstimo</h3>
-        <p class="modal-description">Altere as datas ou a quantidade. A disponibilidade do acervo será atualizada junto com a edição.</p>
+        <p class="modal-description">Altere o vencimento ou a quantidade. A data inicial do empréstimo é preservada e a disponibilidade do acervo é atualizada.</p>
         <form id="loanEditForm" class="form-grid loan-edit-form">
           <label>
             <span>Data e hora do empréstimo</span>
-            <input id="loanStartAtInput" type="datetime-local" required />
+            <input id="loanStartAtInput" type="datetime-local" readonly />
           </label>
           <label>
             <span>Data e hora do vencimento</span>
