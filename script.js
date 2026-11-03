@@ -15,7 +15,7 @@ import { isStudentReader, isTeacherReader, studentCourseLoans } from './reader-p
 import { extendLoanDueDate, getLoanDueDate, getLoanQuantity, getLoanQuantityLimit } from './loan-rules.mjs'
 import { createCoordinationEmailHtml, createStudentEmailHtml } from './email-templates.mjs'
 import { backupCollectionFiles, optionalBackupCollectionFiles, backupRecordFromRow, parseBackupCell, resolveLegacyCategory } from './csv-backup.mjs'
-import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
+import * as XLSX from 'xlsx'
 
 const localStore = createLocalStore()
 const localData = createLocalDataApi(localStore)
@@ -580,7 +580,6 @@ function renderDashboard() {
     $('#topBooksChart'),
     countLoanCopies(state.loans, (loan) => loan.bookTitle || loan.bookCode || 'Livro sem título').slice(0, 5)
   )
-
 }
 
 function dashboardExportPeriod() {
