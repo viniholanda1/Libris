@@ -1,4 +1,4 @@
-# Libris 1.2.10
+# Libris 1.2.11
 
 Sistema escolar de biblioteca da CREDE, feito com HTML, CSS e JavaScript. Os dados operacionais ficam no IndexedDB da máquina da biblioteca.
 
@@ -54,7 +54,7 @@ Abra `http://localhost:8080` no Chromium. Não abra o HTML diretamente pelo gere
 
 ## Aplicativo desktop Tauri
 
-O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.10. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.10/`.
+O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.11. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.11/`.
 
 Para atualizar a branch `main` e gerar o pacote em um único fluxo, execute `./build-debian.sh` no Ubuntu. O script guarda alterações rastreadas e arquivos não rastreados com `git stash`, atualiza a branch com rebase, restaura as alterações, instala as dependências nativas e arquiva o `.deb` na pasta da versão informada em `package.json`.
 
