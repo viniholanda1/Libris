@@ -4,6 +4,7 @@ import {
   countActiveLoanCopies,
   extendLoanDueDate,
   getLoanDueDate,
+  getLoanQuantityLimit,
   getLoanQuantity,
   getMaximumLoanQuantity
 } from '../loan-rules.mjs'
@@ -31,6 +32,27 @@ test('counts active copies across all titles against the reader limit', () => {
     readerId,
     availableCopies: 25
   }), 1)
+})
+
+test('reports the reader-specific remaining limit and available stock for a new loan', () => {
+  const result = getLoanQuantityLimit({
+    loanLimit: 3,
+    activeLoans: [
+      { id: 'existing', readerId, status: 'active', quantity: 1 },
+      { id: 'other-reader', readerId: 'student-2', status: 'active', quantity: 2 }
+    ],
+    readerId,
+    availableCopies: 10
+  })
+
+  assert.deepEqual(result, {
+    loanLimit: 3,
+    activeCopies: 1,
+    otherActiveCopies: 1,
+    remainingReaderCopies: 2,
+    availableCopies: 10,
+    maximum: 2
+  })
 })
 
 test('allows another loan of a title already borrowed when copies and reader capacity remain', () => {
@@ -91,6 +113,22 @@ test('caps an edited loan at the remaining reader limit even when its current qu
     currentLoanId: 'current-loan',
     currentLoanQuantity: 2
   }), 1)
+})
+
+test('does not count the edited loan against its own remaining reader limit', () => {
+  const activeLoans = [
+    { id: 'current-loan', readerId, status: 'active', quantity: 1 },
+    { id: 'other-loan', readerId, status: 'active', quantity: 1 }
+  ]
+
+  assert.equal(getMaximumLoanQuantity({
+    loanLimit: 3,
+    activeLoans,
+    readerId,
+    availableCopies: 10,
+    currentLoanId: 'current-loan',
+    currentLoanQuantity: 1
+  }), 2)
 })
 
 test('caps an edited loan by remaining physical stock after accounting for copies already on that loan', () => {

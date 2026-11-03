@@ -11,8 +11,8 @@ import { createLocalStore } from './local-store.mjs'
 import { createLocalDataApi } from './local-data.mjs'
 import { isCompleteBookScan, parseBookScan } from './book-scan.mjs'
 import { isValidIsbn, normalizeIsbn } from './isbn.mjs'
-import { isStudentReader, studentCourseLoans } from './reader-profiles.mjs'
-import { countActiveLoanCopies, extendLoanDueDate, getLoanDueDate, getLoanQuantity, getMaximumLoanQuantity } from './loan-rules.mjs'
+import { isStudentReader, isTeacherReader, studentCourseLoans } from './reader-profiles.mjs'
+import { extendLoanDueDate, getLoanDueDate, getLoanQuantity, getLoanQuantityLimit } from './loan-rules.mjs'
 import { createCoordinationEmailHtml, createStudentEmailHtml } from './email-templates.mjs'
 import { backupCollectionFiles, optionalBackupCollectionFiles, backupRecordFromRow, parseBackupCell, resolveLegacyCategory } from './csv-backup.mjs'
 import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
@@ -331,12 +331,6 @@ function renderReaders() {
   renderReaderSelector()
 }
 
-function isTeacherReader(reader) {
-  const type = String(reader?.type || '').toLocaleLowerCase('pt-BR')
-  const role = String(reader?.role || '').toLocaleLowerCase('pt-BR')
-  return type === 'professor' || role === 'teacher'
-}
-
 function count(list, key) { const map = new Map(); list.forEach((x) => { const k = key(x); map.set(k, (map.get(k) || 0) + 1) }); return [...map].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value) }
 
 function loanQuantity(loan) {
@@ -350,10 +344,6 @@ function countLoanCopies(loans, key) {
     map.set(label, (map.get(label) || 0) + loanQuantity(loan))
   })
   return [...map].map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
-}
-
-function activeLoanCopiesForReader(readerId) {
-  return countActiveLoanCopies(state.loans, readerId)
 }
 
 function updateLoanQuantityLimit(reader = null) {
@@ -384,16 +374,14 @@ function updateLoanQuantityLimit(reader = null) {
     return
   }
 
-  const activeCopies = activeLoanCopiesForReader(reader.id)
   const loanLimit = getLoanLimitForReader(reader)
-  const remainingLimit = Math.max(0, loanLimit - activeCopies)
-  const copiesForLimit = availableCopies ?? remainingLimit
-  const maximum = getMaximumLoanQuantity({
+  const quantityLimit = getLoanQuantityLimit({
     loanLimit,
     activeLoans: state.loans,
     readerId: reader.id,
-    availableCopies: copiesForLimit
+    availableCopies: availableCopies ?? Number.MAX_SAFE_INTEGER
   })
+  const { activeCopies, remainingReaderCopies, maximum } = quantityLimit
   input.max = String(maximum)
   input.disabled = maximum < 1
   input.value = String(Math.max(1, Math.min(Number(input.value) || 1, maximum || 1)))
@@ -403,8 +391,8 @@ function updateLoanQuantityLimit(reader = null) {
         ? 'Este livro não tem exemplares disponíveis no momento.'
         : 'O leitor já atingiu o limite de empréstimos configurado.'
       : book
-        ? `Disponíveis deste título: ${availableCopies}. Limite do leitor: ${loanLimit}; já possui ${activeCopies} e pode emprestar mais ${remainingLimit}. Máximo neste empréstimo: ${maximum}.`
-        : `Limite do leitor: ${loanLimit}; já possui ${activeCopies} e pode emprestar mais ${remainingLimit}. Informe o livro para conferir o estoque.`
+        ? `Disponíveis deste título: ${availableCopies}. Limite do leitor: ${loanLimit}; já possui ${activeCopies} e pode emprestar mais ${remainingReaderCopies}. Máximo neste empréstimo: ${maximum}.`
+        : `Limite do leitor: ${loanLimit}; já possui ${activeCopies} e pode emprestar mais ${remainingReaderCopies}. Informe o livro para conferir o estoque.`
     help.hidden = false
   }
 }
@@ -923,7 +911,10 @@ function getLastBookSequence(prefix) {
 }
 
 function getLoanLimitForReader(reader = {}) {
-  return isTeacherReader(reader) ? Number(config.maxBooksTeacher || 35) : Number(config.maxBooksStudent || 2)
+  const isTeacher = isTeacherReader(reader)
+  const configuredLimit = isTeacher ? config.maxBooksTeacher : config.maxBooksStudent
+  const limit = Number(configuredLimit)
+  return Number.isSafeInteger(limit) && limit >= 0 ? limit : isTeacher ? 35 : 2
 }
 
 async function logAudit(action, details = {}, actorUid = null) {
@@ -1146,21 +1137,16 @@ async function submitLoan() {
     return
   }
 
-  const activeLoansForReader = activeLoansSnap.docs.reduce(
-    (total, loanDoc) => total + loanQuantity(loanDoc.data()),
-    0
-  )
-
   const activeLoans = activeLoansSnap.docs.map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() }))
   const availableCopies = Number(book.available ?? 0)
-  const maximum = getMaximumLoanQuantity({
+  const quantityLimit = getLoanQuantityLimit({
     loanLimit,
     activeLoans,
     readerId: reader.id,
     availableCopies
   })
-  if (quantity > maximum) {
-    return toast(`Máximo permitido agora: ${maximum} exemplar(es). O leitor já possui ${activeLoansForReader} de ${loanLimit} permitido(s), e há ${availableCopies} exemplar(es) disponível(is) deste título.`, 'error')
+  if (quantity > quantityLimit.maximum) {
+    return toast(`Máximo permitido agora: ${quantityLimit.maximum} exemplar(es). O leitor já possui ${quantityLimit.activeCopies} de ${loanLimit} permitido(s), e há ${availableCopies} exemplar(es) disponível(is) deste título.`, 'error')
   }
 
   const maxLoanDays = getMaxLoanDaysForReader(reader)
@@ -2686,38 +2672,66 @@ function renderLoans() {
   }
 }
 
-function openEditLoanModal(loanId) {
-  const loan = state.loans.find((item) => item.id === loanId && item.status === 'active')
+async function openEditLoanModal(loanId) {
+  const cachedLoan = state.loans.find((item) => item.id === loanId && item.status === 'active')
   const form = $('#loanEditForm')
-  const reader = state.readers.find((item) => item.id === loan?.readerId)
-  const book = state.books.find((item) => item.id === loan?.bookId)
-  if (!loan || !form || !reader || !book) {
+  const reader = state.readers.find((item) => item.id === cachedLoan?.readerId)
+  if (!cachedLoan || !form || !reader) {
     toast('Não foi possível abrir este empréstimo para edição.', 'error')
     return
   }
 
-  const currentQuantity = loanQuantity(loan)
-  const loanLimit = getLoanLimitForReader(reader)
-  const otherActiveCopies = Math.max(0, activeLoanCopiesForReader(reader.id) - currentQuantity)
-  const availableCopies = Number(book.available ?? 0)
-  const maximum = getMaximumLoanQuantity({
-    loanLimit,
-    activeLoans: state.loans,
-    readerId: reader.id,
-    availableCopies,
-    currentLoanId: loan.id,
-    currentLoanQuantity: currentQuantity
-  })
+  try {
+    const [activeLoansSnap, bookSnap] = await Promise.all([
+      getDocs(query(
+        collection(db, 'loans'),
+        where('schoolId', '==', config.currentSchoolId),
+        where('readerId', '==', reader.id),
+        where('status', '==', 'active')
+      )),
+      getDoc(doc(db, 'books', cachedLoan.bookId))
+    ])
+    const activeLoans = activeLoansSnap.docs.map((loanDoc) => ({ id: loanDoc.id, ...loanDoc.data() }))
+    const loan = activeLoans.find((item) => item.id === loanId)
+    if (!loan || !bookSnap.exists()) {
+      toast('Este empréstimo ou livro não está mais ativo nesta escola.', 'error')
+      return
+    }
 
-  form.dataset.loanId = loan.id
-  $('#loanStartAtInput').value = dateTimeLocalValue(loan.createdAt)
-  $('#loanDueAtInput').value = dateTimeLocalValue(getLoanDueDate(loan))
-  $('#loanEditQuantityInput').value = String(currentQuantity)
-  $('#loanEditQuantityInput').max = String(maximum)
-  $('#loanEditQuantityHelp').textContent = currentQuantity > maximum
-    ? `A quantidade atual (${currentQuantity}) excede o máximo seguro (${maximum}). Reduza a quantidade ou regularize outros empréstimos do leitor.`
-    : `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}. Limite do leitor: ${loanLimit}; outros empréstimos ativos: ${otherActiveCopies}; disponíveis deste título: ${availableCopies}.`
-  modal('loanEditModal', true)
+    const currentQuantity = loanQuantity(loan)
+    const loanLimit = getLoanLimitForReader(reader)
+    const bookData = bookSnap.data()
+    if (bookData.schoolId && bookData.schoolId !== config.currentSchoolId) {
+      toast('Este empréstimo ou livro não está mais ativo nesta escola.', 'error')
+      return
+    }
+    const availableCopies = Number(bookData.available ?? bookData.total ?? 0)
+    const quantityLimit = getLoanQuantityLimit({
+      loanLimit,
+      activeLoans,
+      readerId: reader.id,
+      availableCopies,
+      currentLoanId: loan.id,
+      currentLoanQuantity: currentQuantity
+    })
+
+    form.dataset.loanId = loan.id
+    $('#loanStartAtInput').value = dateTimeLocalValue(loan.createdAt)
+    $('#loanDueAtInput').value = dateTimeLocalValue(getLoanDueDate(loan))
+    const quantityInput = $('#loanEditQuantityInput')
+    quantityInput.value = String(quantityLimit.maximum > 0
+      ? Math.min(currentQuantity, quantityLimit.maximum)
+      : currentQuantity)
+    quantityInput.dataset.max = String(quantityLimit.maximum)
+    quantityInput.removeAttribute('max')
+    const limitSummary = `Limite total: ${quantityLimit.loanLimit}; outros empréstimos usam ${quantityLimit.otherActiveCopies}; restam ${quantityLimit.remainingReaderCopies}. Há ${availableCopies} exemplares disponíveis. Máximo seguro nesta edição: ${quantityLimit.maximum}.`
+    $('#loanEditQuantityHelp').textContent = currentQuantity > quantityLimit.maximum
+      ? `A quantidade atual (${currentQuantity}) excede o máximo seguro. Reduza-a para salvar. ${limitSummary}`
+      : limitSummary
+    modal('loanEditModal', true)
+  } catch (err) {
+    error(err, 'Não foi possível consultar os empréstimos atuais e o estoque deste livro.')
+  }
 }
 
 let loanEditPending = false
@@ -2766,7 +2780,7 @@ async function saveEditedLoan(event) {
     if (!currentLoan || !book) {
       return toast('Não foi possível validar o estoque e os empréstimos ativos.', 'error')
     }
-    const quantityMaximum = getMaximumLoanQuantity({
+    const quantityLimit = getLoanQuantityLimit({
       loanLimit,
       activeLoans,
       readerId: reader.id,
@@ -2774,8 +2788,8 @@ async function saveEditedLoan(event) {
       currentLoanId: loanId,
       currentLoanQuantity: loanQuantity(currentLoan)
     })
-    if (quantity > quantityMaximum) {
-      return toast(`Máximo permitido: ${quantityMaximum} exemplar(es), considerando o limite do leitor e o estoque disponível.`, 'error')
+    if (quantity > quantityLimit.maximum) {
+      return toast(`Máximo permitido: ${quantityLimit.maximum} exemplar(es). Limite do leitor: ${quantityLimit.loanLimit}; outros empréstimos: ${quantityLimit.otherActiveCopies}; disponíveis deste título: ${quantityLimit.availableCopies}.`, 'error')
     }
 
     const startDay = Date.UTC(startAt.getFullYear(), startAt.getMonth(), startAt.getDate())
@@ -2961,6 +2975,16 @@ function setup() {
     const reader = state.readers.find((item) => item.id === $('#loanReaderIdInput')?.value)
     updateLoanQuantityLimit(reader)
   }
+  if ($('#loanQuantityInput')) $('#loanQuantityInput').oninput = (event) => {
+    const input = event.currentTarget
+    const maximum = Number(input.max)
+    const quantity = Number(input.value)
+    if (input.value && Number.isSafeInteger(maximum) && maximum > 0 && Number.isSafeInteger(quantity) && quantity > maximum) {
+      input.value = String(maximum)
+      const help = $('#loanQuantityHelp')
+      if (help) help.textContent = `Quantidade ajustada ao máximo seguro (${maximum}), considerando o limite restante do leitor e os exemplares disponíveis.`
+    }
+  }
   if ($('#readerInput')) {
     $('#readerInput').oninput = () => {
       if ($('#loanReaderIdInput')) $('#loanReaderIdInput').value = ''
@@ -2985,6 +3009,15 @@ function setup() {
   if ($('#readerSuggestions')) $('#readerSuggestions').onclick = (event) => {
     const option = event.target.closest('[data-select-loan-reader]')
     if (option) selectLoanReader(option.dataset.selectLoanReader)
+  }
+  if ($('#loanEditQuantityInput')) $('#loanEditQuantityInput').oninput = (event) => {
+    const input = event.currentTarget
+    const maximum = Number(input.dataset.max)
+    const quantity = Number(input.value)
+    if (input.value && Number.isSafeInteger(maximum) && maximum > 0 && Number.isSafeInteger(quantity) && quantity > maximum) {
+      input.value = String(maximum)
+      $('#loanEditQuantityHelp').textContent = `Máximo permitido: ${maximum} ${maximum === 1 ? 'exemplar' : 'exemplares'}. A quantidade foi ajustada ao limite seguro.`
+    }
   }
 
   if ($('#bookForm')) $('#bookForm').onsubmit = addBook

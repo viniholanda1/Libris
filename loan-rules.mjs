@@ -25,7 +25,7 @@ export function countActiveLoanCopies(loans, readerId, excludedLoanId = null) {
     .reduce((total, loan) => total + getLoanQuantity(loan), 0)
 }
 
-export function getMaximumLoanQuantity({
+export function getLoanQuantityLimit({
   loanLimit,
   activeLoans,
   readerId,
@@ -40,9 +40,21 @@ export function getMaximumLoanQuantity({
   const currentQuantity = Number.isSafeInteger(currentLoanQuantity) && currentLoanQuantity > 0
     ? currentLoanQuantity
     : 0
+  const activeCopies = countActiveLoanCopies(activeLoans, readerId)
   const otherActiveCopies = countActiveLoanCopies(activeLoans, readerId, currentLoanId)
-  const limitCapacity = Math.max(0, limit - otherActiveCopies)
+  const remainingReaderCopies = Math.max(0, limit - otherActiveCopies)
   const stockCapacity = available + currentQuantity
 
-  return Math.min(limitCapacity, stockCapacity)
+  return {
+    loanLimit: limit,
+    activeCopies,
+    otherActiveCopies,
+    remainingReaderCopies,
+    availableCopies: available,
+    maximum: Math.min(remainingReaderCopies, stockCapacity)
+  }
+}
+
+export function getMaximumLoanQuantity(options) {
+  return getLoanQuantityLimit(options).maximum
 }

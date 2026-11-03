@@ -4,6 +4,13 @@ export function isStudentReader(reader) {
   return type === 'aluno' || role === 'student' || (!type && !role)
 }
 
+export function isTeacherReader(reader) {
+  const type = String(reader?.type || '').trim().toLocaleLowerCase('pt-BR')
+  const role = String(reader?.role || '').trim().toLocaleLowerCase('pt-BR')
+  return ['professor', 'teacher', 'docente'].includes(type) ||
+    ['professor', 'teacher', 'docente'].includes(role)
+}
+
 export function studentCourseLoans(activeLoans, readers) {
   const readersById = new Map(readers.map((reader) => [reader.id, reader]))
 

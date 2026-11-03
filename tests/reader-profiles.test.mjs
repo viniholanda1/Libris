@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { isStudentReader, studentCourseLoans } from '../reader-profiles.mjs'
+import { isStudentReader, isTeacherReader, studentCourseLoans } from '../reader-profiles.mjs'
 
 test('considera somente empréstimos de alunos com turma aplicável no gráfico', () => {
   const readers = [
@@ -24,4 +24,12 @@ test('preserva a classificação existente de leitores sem perfil explícito', (
   assert.equal(isStudentReader({}), true)
   assert.equal(isStudentReader({ type: 'Professor' }), false)
   assert.equal(isStudentReader({ role: 'student' }), true)
+})
+
+test('reconhece o perfil de professor nos formatos usados pelos cadastros', () => {
+  assert.equal(isTeacherReader({ type: 'Professor' }), true)
+  assert.equal(isTeacherReader({ type: 'teacher' }), true)
+  assert.equal(isTeacherReader({ role: 'Professor' }), true)
+  assert.equal(isTeacherReader({ role: 'docente' }), true)
+  assert.equal(isTeacherReader({ type: 'Aluno' }), false)
 })
