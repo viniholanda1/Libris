@@ -2276,6 +2276,14 @@ function resetAdminState() {
     const lastAuthorY = authorY + (authorLineCount - 1) * authorLineHeight
     const detailsY = Math.max(300, lastAuthorY + 42)
     const detailsSideInset = 28
+    context.textAlign = 'left'
+    context.fillText(
+      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
+      sideMargin + detailsSideInset,
+      detailsY,
+      contentWidth / 2 - detailsSideInset
+    )
+
     context.font = '500 34px Arial, sans-serif'
     context.textAlign = 'right'
     context.fillText(
@@ -2300,16 +2308,6 @@ function resetAdminState() {
       barcodeY,
       barcodeWidth,
       barcodeHeight
-    )
-
-    context.fillStyle = '#24352b'
-    context.font = '700 32px Arial, sans-serif'
-    context.textAlign = 'center'
-    context.fillText(
-      `TOMB.: ${String(book.legacyCatalogReference || book.tombamento || '—')}`,
-      centerX,
-      Math.min(canvas.height - 28, barcodeY + barcodeHeight + 34),
-      contentWidth
     )
 
     return canvas
