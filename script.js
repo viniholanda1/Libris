@@ -2235,8 +2235,8 @@ function resetAdminState() {
     context.textAlign = 'center'
     context.fillStyle = '#1a241d'
     context.font = '700 68px Georgia, serif'
-    const titleY = 135
-    const titleLineHeight = 64
+    const titleY = 155
+    const titleLineHeight = 72
     const titleLineCount = drawWrappedLabelText(
       context,
       book.title || 'Livro sem título',
@@ -2249,7 +2249,7 @@ function resetAdminState() {
 
     context.fillStyle = '#1e5b3d'
     context.font = '700 48px Arial, sans-serif'
-    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 44
+    const categoryY = titleY + (titleLineCount - 1) * titleLineHeight + 52
     context.fillText(
       String(book.categoryName || label(book.categoryId) || 'Geral').toLocaleUpperCase('pt-BR'),
       centerX,
@@ -2259,8 +2259,8 @@ function resetAdminState() {
 
     context.fillStyle = '#4f6256'
     context.font = 'italic 500 46px Arial, sans-serif'
-    const authorY = categoryY + 54
-    const authorLineHeight = 44
+    const authorY = categoryY + 62
+    const authorLineHeight = 50
     const authorLineCount = drawWrappedLabelText(
       context,
       book.author || 'Autoria não informada',
@@ -2274,7 +2274,7 @@ function resetAdminState() {
     context.fillStyle = '#24352b'
     context.font = '700 39px Arial, sans-serif'
     const lastAuthorY = authorY + (authorLineCount - 1) * authorLineHeight
-    const detailsY = Math.max(300, lastAuthorY + 42)
+    const detailsY = Math.max(328, lastAuthorY + 58)
     const detailsSideInset = 28
     context.textAlign = 'left'
     context.fillText(
@@ -2294,11 +2294,11 @@ function resetAdminState() {
     )
 
     context.textAlign = 'center'
-    const barcodeY = detailsY + 18
+    const barcodeY = detailsY + 32
     const barcodeScale = Math.min(
-      1.65,
+      2.4,
       contentWidth / barcodeCanvas.width,
-      Math.max(0, canvas.height - 78 - barcodeY) / barcodeCanvas.height
+      Math.max(0, canvas.height - 26 - barcodeY) / barcodeCanvas.height
     )
     const barcodeWidth = barcodeCanvas.width * barcodeScale
     const barcodeHeight = barcodeCanvas.height * barcodeScale
