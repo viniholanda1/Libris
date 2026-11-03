@@ -581,12 +581,6 @@ function renderDashboard() {
     countLoanCopies(state.loans, (loan) => loan.bookTitle || loan.bookCode || 'Livro sem título').slice(0, 5)
   )
 
-  const readersById = new Map(state.readers.map((reader) => [reader.id, reader]))
-  const activeLoansByReaderType = count(active, (loan) => {
-    const reader = readersById.get(loan.readerId)
-    return reader && isStudentReader(reader) ? 'Alunos' : 'Professores e outros'
-  })
-  renderBars($('#loansByReaderTypeChart'), activeLoansByReaderType)
 }
 
 function dashboardExportPeriod() {
@@ -619,14 +613,7 @@ function dashboardExportPeriod() {
 
 function dashboardExportData() {
   const period = dashboardExportPeriod()
-  const readerById = new Map(state.readers.map((reader) => [reader.id, reader]))
   const groupLoans = (keyForLoan) => countLoanCopies(period.loans, keyForLoan).slice(0, 5)
-  const loanReaderType = (loan) => {
-    const reader = readerById.get(loan.readerId)
-    if (isStudentReader(reader)) return 'Alunos'
-    if (isTeacherReader(reader)) return 'Professores'
-    return 'Outros'
-  }
   const genreData = count(state.books, (book) => bookCategoryName(book)).slice(0, 5)
   const monthlyBuckets = Array.from({ length: 6 }, (_, index) => {
     const start = new Date(period.now.getFullYear(), period.now.getMonth() - 5 + index, 1)
@@ -648,7 +635,6 @@ function dashboardExportData() {
   const monthlyBookBuckets = monthlyBookRegistrationData(state.books, period.now)
   return {
     ...period,
-    readerById,
     charts: [
       { title: 'Top 5 Gêneros', kind: 'bars', data: genreData },
       { title: 'Status do Acervo', kind: 'donut', data: [
@@ -664,8 +650,7 @@ function dashboardExportData() {
         { label: 'Professores', value: state.readers.filter(isTeacherReader).length },
         { label: 'Outros', value: state.readers.filter((reader) => !isStudentReader(reader) && !isTeacherReader(reader)).length }
       ] },
-      { title: 'Livros mais emprestados', kind: 'bars', data: groupLoans((loan) => loan.bookTitle || loan.bookCode || 'Livro sem título') },
-      { title: 'Exemplares emprestados por perfil', kind: 'bars', data: groupLoans(loanReaderType) }
+      { title: 'Livros mais emprestados', kind: 'bars', data: groupLoans((loan) => loan.bookTitle || loan.bookCode || 'Livro sem título') }
     ]
   }
 }
@@ -842,12 +827,6 @@ async function downloadDashboardReport() {
     const data = dashboardExportData()
     const active = data.loans.filter((loan) => loan.status === 'active')
     const overdueCount = active.filter(overdue).reduce((total, loan) => total + loanQuantity(loan), 0)
-    const profileCounts = countLoanCopies(data.loans, (loan) => {
-      const reader = data.readerById.get(loan.readerId)
-      if (isStudentReader(reader)) return 'Alunos'
-      if (isTeacherReader(reader)) return 'Professores'
-      return 'Outros'
-    })
     const topBooks = countLoanCopies(data.loans, (loan) => loan.bookTitle || loan.bookCode || 'Livro sem título').slice(0, 5)
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true })
     const left = 18
@@ -877,10 +856,6 @@ async function downloadDashboardReport() {
     addLine(`Exemplares em atraso entre os ativos: ${overdueCount}`)
     addLine(`Leitores cadastrados atualmente: ${state.readers.length}`)
     addLine(`Exemplares no acervo atualmente: ${state.books.reduce((sum, book) => sum + Number(book.total || 0), 0)}`)
-    y += 3
-    addLine('Exemplares emprestados por perfil', { bold: true, size: 14, lineHeight: 7 })
-    if (profileCounts.length) profileCounts.forEach((item) => addLine(`${item.label}: ${item.value}`))
-    else addLine('Sem empréstimos registrados no período.')
     y += 3
     addLine('Livros mais emprestados no período', { bold: true, size: 14, lineHeight: 7 })
     if (topBooks.length) topBooks.forEach((item, index) => addLine(`${index + 1}. ${item.label}: ${item.value}`))
