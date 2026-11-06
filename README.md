@@ -1,90 +1,94 @@
 # Libris 1.2.11
 
-Sistema escolar de biblioteca da CREDE, feito com HTML, CSS e JavaScript. Os dados operacionais ficam no IndexedDB da máquina da biblioteca.
+Sistema de biblioteca escolar da CREDE. A interface é feita em HTML, CSS e JavaScript; o modo desktop usa Tauri 2. Os dados operacionais são armazenados localmente no navegador/aplicativo.
 
-## Estado da arquitetura
+## Arquitetura e dados
 
-O painel usa IndexedDB para guardar livros, leitores, empréstimos, contas locais, configurações e auditoria. Os dados operacionais ficam no computador da escola. O Firebase Authentication é usado somente para o acesso restrito da CREDE. Os backups são gerados localmente como arquivos ZIP.
+- Livros, leitores, empréstimos, configurações, contas locais e auditoria ficam no IndexedDB e são separados por `schoolId`.
+- Os dados não são sincronizados entre computadores. Exporte e guarde backups regularmente; limpar os dados do navegador ou desinstalar o aplicativo pode apagar os dados locais.
+- As contas locais usam hashes de senha PBKDF2. A autenticação da CREDE é feita pelo Firebase Authentication e serve para acessar a configuração administrativa, não para sincronizar o acervo.
+- Backups completos são arquivos ZIP com CSVs. As credenciais locais e a senha SMTP não são exportadas. Restaurar um backup substitui os dados da escola atual, preservando as contas locais existentes no computador.
+- A senha SMTP é guardada no cofre de credenciais do sistema operacional no aplicativo desktop. O envio é manual e só está disponível no desktop.
 
-## Acesso local
+### Conectividade e modo offline
 
-- A CREDE abre **Configuração local (CREDE)**, cadastra a escola e cria os emails e senhas dos usuários. Senhas são armazenadas como hashes PBKDF2 com salt, não em texto puro.
-- Os usuários entram pela única tela normal de login. Não há criação nem redefinição de senha pelo usuário; a CREDE altera as credenciais na configuração local.
-- O login do painel não usa conta Google.
-- A sessão permanece salva neste computador até a pessoa sair. Limpar os dados do navegador/aplicativo encerra a sessão e exige restaurar um backup.
-- O botão **Importar** aceita um CSV legado de livros ou um ZIP completo de backup com arquivos CSV. Categorias ausentes do CSV legado são criadas usando o prefixo do código do livro; a escola de origem é remapeada para a escola configurada.
-- O botão **Exportar** gera um backup completo ZIP com CSVs para salvar no computador. Para restaurar, use **Importar** e selecione o ZIP. Os CSVs não incluem senhas nem hashes de senha; a restauração mantém as contas locais já cadastradas no computador. Guarde uma cópia do ZIP em um local seguro.
-- A senha SMTP fica no cofre de credenciais do sistema operacional, separada do IndexedDB e dos backups. Os últimos 100 e-mails enviados por escola são auditados localmente, sem armazenar o corpo da mensagem.
+O service worker mantém em cache o shell da aplicação, mas não sincroniza nem faz backup do IndexedDB. Login CREDE, busca de capas/sinopses e recursos carregados sob demanda para ZIP/PDF precisam de conexão. Planeje o primeiro acesso e os fluxos administrativos com internet disponível.
 
-Mantenha cópias dos arquivos antigos até confirmar a importação do CSV e testar a restauração do backup completo.
+A pasta `functions/` contém uma função de backup agendado para o modelo legado no Firestore. Ela **não** lê o IndexedDB usado pelo aplicativo atual; não a use como substituta dos backups exportados no Libris.
 
-## Configuração Firebase
+## Requisitos
 
-1. No Firebase Console do projeto `librisce`, habilite **Authentication > Email/Password** para as contas administrativas CREDE. Adicione o domínio HTTPS publicado em **Authorized domains**.
-2. Em **Authentication > Users**, cadastre cada email administrativo CREDE com sua própria senha forte. O acesso usa o email e a senha informados na tela **Configuração local (CREDE)**; as credenciais são validadas pelo Firebase Authentication e não ficam no código.
-3. No computador da biblioteca, use **Configuração local (CREDE)** e entre com um dos emails administrativos cadastrados no Firebase e sua senha correspondente. Cadastre somente contas autorizadas para administrar a configuração local.
-4. Cadastre a escola, o email da coordenação, as contas locais e as configurações SMTP institucionais. A senha de app é salva no cofre seguro do sistema no aplicativo desktop.
+- Node.js 22.12 ou superior e npm para desenvolvimento e build web.
+- Rust/Cargo, Tauri CLI e dependências do sistema para compilar o aplicativo desktop.
+- Ubuntu/Debian amd64 para gerar o instalador `.deb`.
 
-As contas locais da escola são independentes do Firebase Authentication; a senha administrativa CREDE continua sendo gerenciada pelo Firebase.
-
-## Migração de dados legados
-
-Para trazer o acervo do site antigo, selecione o CSV em **Importar**. Os nomes de categorias do arquivo são preservados e categorias que ainda não existem são cadastradas automaticamente com base no prefixo do código. IDs de escola antigos, como `escola_1`, são tratados como origem e substituídos pelo identificador local configurado. Para restaurar um backup Libris completo, selecione o ZIP gerado em **Exportar**. A restauração substitui os dados locais da escola atual.
-
-## Capas, sinopses e avisos por e-mail
-
-Ao cadastrar um livro, o sistema busca automaticamente capa e descrição pelo título, autor e editora. A primeira fonte é o Google Books; se não houver resultado, ele tenta a Open Library. Se nenhuma fonte encontrar o livro, o cadastro continua normalmente sem esses dados.
-
-Os avisos de e-mail são enviados manualmente pelo aplicativo desktop através do servidor SMTP configurado pela CREDE. **Avisar leitor por e-mail** envia ao endereço cadastrado; **Avisar coordenação** envia à coordenação escolar. O envio exige conexão com o servidor de e-mail e aceita portas seguras 465 (TLS) ou 587 (STARTTLS). Não há cota mensal nem envio automático em segundo plano. Os últimos 100 envios de cada escola são registrados localmente.
-
-O limite de empréstimos é contado em exemplares ativos por leitor, somando todos os títulos. Um leitor pode registrar mais de um empréstimo do mesmo título quando houver estoque e ainda tiver limite disponível.
-
-A quantidade do empréstimo pode ser ajustada respeitando estoque e limite do leitor. A data de saída (`createdAt`) é preservada; renovações acrescentam dias ao vencimento (`dueDate`). Empréstimos antigos que ainda usam `dueAt` continuam compatíveis.
-
-## Executar localmente
-
-Gere os arquivos publicados e sirva a pasta `dist` por HTTP:
+## Desenvolvimento no Codespace
 
 ```sh
+npm ci
+npm run dev -- --host 0.0.0.0
+```
+
+Abra a porta **5173** encaminhada pelo Codespaces. Para desenvolvimento local, `npm run dev` também inicia o Vite em `http://localhost:5173`.
+
+## Testes e builds
+
+```sh
+npm test
 npm run build:hosting
+```
+
+O build web é escrito em `dist/` (gerado e ignorado pelo Git). Para testar o resultado compilado:
+
+```sh
 python3 -m http.server 8080 --directory dist
 ```
 
-Abra `http://localhost:8080` no Chromium. Não abra o HTML diretamente pelo gerenciador de arquivos: módulos JavaScript e o service worker precisam de um servidor HTTP. Os dados da biblioteca são locais; conexão é necessária para login CREDE e para enviar e-mails pelo SMTP institucional no desktop.
+Abra `http://localhost:8080`. Para compilar o aplicativo desktop:
 
-## Aplicativo desktop Tauri
+```sh
+npm run build:desktop
+```
 
-O desktop usa Tauri v2 e mantém a mesma interface web. A versão atual é 1.2.11. Para desenvolvimento, instale as dependências Linux do Tauri e execute `npm run tauri dev`. Para gerar o pacote Debian da versão atual, execute `npm run build:desktop`; o arquivo será criado em `src-tauri/target/release/bundle/deb/` e arquivado em `versoes/1.2.11/`.
+O instalador é gerado em `src-tauri/target/release/bundle/deb/`. A versão arquivada está em [`versoes/1.2.11/`](./versoes/1.2.11/). O diretório `src-tauri/target/` é cache de compilação e pode ser recriado pelo Cargo.
 
-Para atualizar a branch `main` e gerar o pacote em um único fluxo, execute `./build-debian.sh` no Ubuntu. O script guarda alterações rastreadas e arquivos não rastreados com `git stash`, atualiza a branch com rebase, restaura as alterações, instala as dependências nativas e arquiva o `.deb` na pasta da versão informada em `package.json`.
+Para executar a interface desktop durante o desenvolvimento, use `npm run tauri dev`.
 
-No Ubuntu, o build requer Rust/Cargo e os pacotes `build-essential`, `curl`, `wget`, `file`, `libssl-dev`, `libdbus-1-dev`, `libxdo-dev`, `librsvg2-dev` e `libwebkit2gtk-4.1-dev`. O serviço de credenciais do sistema (Secret Service) deve estar disponível para guardar a senha SMTP. O login CREDE e o envio SMTP devem ser validados no WebView do sistema após a instalação.
+## Publicação web
 
-O **leitor 2D USB** funciona como teclado, sem configuração no Libris: ao abrir Empréstimos, o campo **ID do livro** recebe foco. Escaneie o código de barras Code 128; o app aceita Enter ao final ou detecta o término da leitura automaticamente. As etiquetas mostram também o título, a categoria, o autor, o tombamento legado e o ISBN. Também é possível digitar o código, como `LI-0002`. A leitura por câmera não está disponível.
+O workflow [deploy-pages.yml](./.github/workflows/deploy-pages.yml) compila e publica a branch `main` no GitHub Pages. Configure **Settings → Pages → Build and deployment → GitHub Actions** no repositório. O build do workflow usa `/Libris/` como caminho base; em hospedagem própria, use `npm run build:hosting` sem `GITHUB_PAGES=true`.
 
-## Instalar no Chromium/Xubuntu
+O Firebase Authentication exige que o domínio de publicação esteja cadastrado em **Authorized domains** no Firebase Console. A configuração web do Firebase no cliente não é uma chave privada; nunca inclua service-account keys, senhas SMTP ou tokens no frontend ou no repositório.
 
-1. Abra a URL HTTPS publicada ou `http://localhost:8080` no Chromium.
-2. Use o ícone **Instalar Libris** na barra de endereço ou abra o menu do Chromium e escolha **Instalar Libris**.
-3. Confirme a instalação. O Libris será aberto em uma janela própria e aparecerá no lançador de aplicativos.
+## Configuração CREDE e login
 
-Se a opção de instalação não aparecer, confira se o manifest, os ícones e o service worker estão acessíveis na mesma origem. Para instalação em outro computador ou celular, a origem precisa usar HTTPS; a exceção para HTTP vale somente para `localhost`.
+1. Habilite Email/Password no Firebase Authentication do projeto `librisce` e cadastre as contas administrativas CREDE.
+2. No aplicativo, abra **Configuração local (CREDE)** e autentique-se com uma dessas contas.
+3. Configure a escola e crie as contas locais que serão usadas no login diário. Essas contas e os dados da escola ficam neste computador.
 
-## Publicar
+Não há recuperação automática das contas locais. A administração CREDE deve redefinir as credenciais localmente.
 
-Para publicar o shell estático fora do Firebase, use Cloudflare Pages conectado ao repositório:
+## Backup e migração
 
-1. Crie um projeto Pages e conecte este repositório.
-2. Configure o comando de build como `npm run build:hosting` e o diretório de saída como `dist`.
-3. Aguarde a URL HTTPS e teste o login e as funções do app antes de compartilhar o endereço.
+- Use **Exportar** para gerar um ZIP completo e guarde-o fora do computador da biblioteca.
+- Antes de restaurar, confira escola/data do arquivo: a restauração substitui os dados da escola atual.
+- **Importar** aceita backup completo do Libris e CSV legado de livros. Faça backup antes de migrar.
+- `migrate.js` e `functions/` pertencem a fluxos legados que escrevem/leem Firestore; não são necessários para o funcionamento local atual. Não execute migrações sem revisar a origem e manter um backup.
+- Os arquivos `libris-backup-*.zip` são dados locais e estão ignorados pelo Git. Não os envie ao repositório.
 
-Cadastre o domínio HTTPS definitivo em **Authorized domains** no Firebase Authentication. Nunca coloque Client Secret, chave privada ou token de serviço no frontend.
+## Empréstimos, etiquetas e avisos
 
-O build copia doze arquivos necessários ao app: HTML, CSS, JavaScript, módulos de armazenamento local, configuração de autenticação, imagem de marca, manifest, service worker e dois ícones. Scripts de migração, funções de servidor, chaves privadas e arquivos de desenvolvimento não são publicados.
+O limite de empréstimo é contado em exemplares ativos por leitor, somando todos os títulos; o novo empréstimo também é limitado pelo estoque disponível. A edição preserva a data inicial (`createdAt`) e altera a data de vencimento (`dueDate`, com compatibilidade para registros antigos que usam `dueAt`).
 
-## Limites atuais
+O leitor 2D USB funciona como teclado: abra Empréstimos, foque o campo **ID do livro** e leia o código. As etiquetas usam código de barras e incluem dados bibliográficos, tombamento legado e ISBN. Leitura por câmera não está disponível.
 
-- A autenticação CREDE ainda depende do Firebase Authentication por email/senha; o provedor Google é usado somente para autorização do Drive. Não há Client Secret no frontend.
-- A migração de dados existentes requer o arquivo de backup legado. O app não conecta ao Firestore.
-- A função agendada de backup no Drive, em `functions/`, consulta somente dados legados do Firestore; ela não inclui os dados atuais do IndexedDB local. Para proteger os dados atuais, gere o ZIP pelo aplicativo e teste a restauração periodicamente.
-- A validação automatizada cobre armazenamento e CSV. O login administrativo ainda precisa ser testado com a configuração Firebase do ambiente de produção.
+As capas e sinopses podem ser consultadas no Google Books e na Open Library. Os avisos por e-mail são manuais no desktop, usam o servidor SMTP configurado e exigem internet; as portas aceitas são 465 (TLS) e 587 (STARTTLS).
+
+## Arquivos principais
+
+- `index.html`, `styles.css`, `script.js`: interface e fluxos do aplicativo.
+- `local-store.mjs`, `local-data.mjs`: persistência IndexedDB e API local.
+- `loan-rules.mjs`, `reader-profiles.mjs`: regras compartilhadas e perfis.
+- `tests/`: testes automatizados executados por `npm test`.
+- `src-tauri/`: integração e configuração do aplicativo desktop.
+- `versoes/`: instaladores e código históricos; o aplicativo ativo fica na raiz.

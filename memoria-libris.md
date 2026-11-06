@@ -1,83 +1,35 @@
-# Memória do projeto Libris
+# Notas técnicas do Libris
 
-## Visão geral
+## Estado atual
 
-Este projeto inclui:
-- Cloud Functions do Firebase para backup semanal
-- envio manual de avisos pelo aplicativo desktop via SMTP
-- regras de segurança mais rígidas no Firestore
-- painel admin com configurações da escola
-- reset do ciclo de avisos em renovações de empréstimo
+- Release atual: **1.2.11**.
+- Interface: HTML, CSS e JavaScript; Vite é usado para desenvolvimento e build.
+- Desktop: Tauri 2; o instalador Debian é compilado com `npm run build:desktop`.
+- Persistência operacional: IndexedDB via `local-store.mjs` e `local-data.mjs`, sempre filtrada por escola.
+- Testes: `npm test`.
 
-## 1) Envio manual de e-mails por SMTP
+## Dados e autenticação
 
-Os avisos ao leitor e à coordenação são enviados manualmente no aplicativo desktop. Não há disparos agendados em nuvem.
+O acervo e as contas locais não são sincronizados entre computadores. Backups completos são exportados manualmente pelo app em ZIP/CSV; restaurar substitui os dados da escola atual, mas mantém as contas locais existentes. O ZIP não leva senhas nem a senha SMTP.
 
-- Host, porta e usuário SMTP ficam na configuração local da escola, sempre associados ao `schoolId`.
-- A senha de aplicativo é guardada no cofre de credenciais do sistema operacional pelo comando Tauri, e não no IndexedDB, Firestore ou backup.
-- São aceitas conexões seguras nas portas 465 (TLS) e 587 (STARTTLS obrigatório).
-- O aplicativo registra os últimos 100 envios por escola em `email_logs`, com destinatário, assunto, data e status. O corpo e as credenciais não são registrados.
-- O arquivo de backup inclui o histórico de envios, mas não exporta a senha SMTP.
+O Firebase Authentication é usado para autenticar a administração CREDE. O login cotidiano usa contas locais, cujas senhas são armazenadas com PBKDF2. A configuração web Firebase não é segredo; credenciais administrativas, senhas e chaves de service account não devem ser incluídas no frontend ou em backups.
 
-## 4) Reset ao renovar empréstimo
+## Regras de empréstimo
 
-Um ponto crítico da funcionalidade era reiniciar o ciclo de avisos quando o empréstimo era renovado.
+- O limite é contado em exemplares ativos por leitor, através de todos os títulos.
+- A quantidade de um novo empréstimo não pode superar o limite restante do leitor nem o estoque disponível.
+- A edição valida novamente o limite e o estoque.
+- `createdAt` registra a saída e não deve ser alterado por renovação; renovações estendem `dueDate`.
+- `dueAt` continua aceito para compatibilidade com registros antigos.
 
-Por isso, ao chamar a renovação, o frontend passou a atualizar:
+As regras estão centralizadas em `loan-rules.mjs` e cobertas por `tests/loan-rules.test.mjs`.
 
-```js
-notices: {}
-```
+## E-mail e conectividade
 
-Isso garante que:
-- o sistema não reuse avisos já enviados
-- o ciclo comece do zero para o novo prazo
-- o aluno não receba lembretes antigos após renovação
+O envio SMTP é manual e disponível somente no aplicativo desktop. A senha SMTP fica no cofre de credenciais do sistema operacional. Firebase Authentication, consulta de capas, dependências carregadas por CDN e SMTP precisam de conexão; o service worker armazena em cache apenas o shell web, não os dados nem os serviços remotos.
 
-## 5) Configurações da escola
+## Componentes legados
 
-No painel administrativo, foi incluída a aba "Configurações".
-
-### Campos adicionados
-- `coordinationEmail`
-- `reminderDays`
-- `coordinationDays`
-
-Esses valores são salvos no documento da escola, por exemplo em:
-
-```js
-schools/escola-padrao
-```
-
-## 6) Regras do Firestore
-
-O arquivo `firestore.rules` foi reforçado para evitar brechas de segurança.
-
-### Principais melhorias
-- somente usuários autenticados entram no fluxo
-- somente admins podem criar/alterar dados sensíveis
-- verificação de estoque e totais dos livros
-- regras mais restritas para `schools`
-- `loans` só aceitam atualizações esperadas
-- `notices` não pode ser alterado livremente pelo frontend
-
-## 7) Painel admin
-
-A interface foi ajustada para permitir que o admin configure a escola e o comportamento dos lembretes sem mexer em código.
-
-Isso reduz dependência de manutenção manual e melhora a experiência de operação do sistema escolar.
-
-## 8) O comportamento dos avisos
-
-O usuário abre a notificação de um empréstimo e escolhe enviar um e-mail manual ao leitor ou à coordenação. Os avisos por WhatsApp continuam disponíveis. Os envios automáticos foram desativados porque as credenciais SMTP pertencem ao computador local da escola.
-
-## 9) Resultado
-
-O projeto passou a ter:
-- envio SMTP manual sem serviço de terceiros
-- regras de segurança mais robustas
-- manutenção mais simples
-- ajustes de negócio configuráveis pela escola
-- auditoria local dos e-mails enviados
-
-Este arquivo serve como documentação interna do funcionamento atual do projeto.
+- `functions/` contém backup agendado do Firestore legado e não inclui os dados atuais do IndexedDB.
+- `migrate.js` escreve dados no Firestore legado; não é necessário para o funcionamento atual. Revise origem e destino e faça backup antes de qualquer execução.
+- `versoes/` guarda instaladores antigos, logs e uma cópia legada; o código ativo fica na raiz.

@@ -1,18 +1,9 @@
 # Versoes arquivadas
 
-- `1.2.1/` guarda o pacote Debian anterior ao release atual.
-- `1.2.2/` guarda o pacote Debian anterior.
-- `1.2.3/` guarda o pacote Debian anterior.
-- `1.2.4/` guarda o pacote Debian anterior.
-- `1.2.5/` guarda o pacote Debian anterior.
-- `1.2.6/` guarda o pacote Debian anterior.
-- `1.2.7/` guarda o pacote Debian anterior.
-- `1.2.8/` guarda um pacote Debian anterior.
-- `1.2.9/` guarda o pacote Debian anterior.
-- `1.2.10/` guarda o pacote Debian desta versão.
-- `1.2.11/` guarda o pacote Debian desta versão.
-- `debian-antigos/` preserva os pacotes Debian historicos com seus nomes originais.
-- `codigo-legado/` preserva a copia antiga do projeto e recursos que nao sao usados pelo build atual.
-- `logs/` guarda os logs antigos de compilacao.
+- `1.2.11/` contém o instalador Debian atual.
+- `1.2.1/` a `1.2.10/` contêm instaladores de versões anteriores.
+- `debian-antigos/` preserva pacotes históricos com os nomes originais.
+- `codigo-legado/` preserva uma cópia antiga do projeto; não faz parte do build ativo.
+- `logs/` contém registros históricos de compilação.
 
-Os arquivos desta pasta sao historicos. O codigo ativo e os comandos de desenvolvimento continuam na raiz do repositorio.
+O código ativo e os comandos de desenvolvimento ficam na raiz do repositório. `npm run build:desktop` gera o pacote em `src-tauri/target/`; esse diretório é cache gerado e não é arquivado aqui automaticamente.

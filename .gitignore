@@ -2,3 +2,7 @@
 /dist/
 /src-tauri/target/
 /src-tauri/gen/
+
+# Local data and generated editor backups
+/libris-backup-*.zip
+*.bak
