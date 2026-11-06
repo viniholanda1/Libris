@@ -4,5 +4,5 @@
 /src-tauri/gen/
 
 # Local data and generated editor backups
-/libris-backup-*.zip
+/*.zip
 *.bak
